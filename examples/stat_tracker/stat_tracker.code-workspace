@@ -1,0 +1,14 @@
+{
+	"folders": [
+		{
+			"path": "D:\\Nextcloud\\Adam_and_Albert\\ch554_sdcc"
+		}
+	],
+	"settings": {
+		"files.associations": {
+			"ADC-converted.C": "cpp",
+			"ADC.C": "cpp",
+			"Main.C": "cpp"
+		}
+	}
+}
