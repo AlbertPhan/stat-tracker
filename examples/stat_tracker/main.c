@@ -10,7 +10,8 @@ TODO:
 [] charging status
 [x] change to HSV for LEDs (convert functions to use HSV)
 [] Touch buttons for brightness control
-[] FIX HSVtoRGB() not properly converting for saturation values above 128
+[x] FIX HSVtoRGB() not properly converting for saturation values above 128
+[] Add configuration states using multi button presses
 */
 #include <stdint.h>
 
@@ -53,22 +54,23 @@ TODO:
 #define RED_HUE 0
 #define GREEN_HUE 85
 #define BLUE_HUE 170
-#define MAX_BRIGHTNESS 50
+#define MAX_BRIGHTNESS 100
+#define DEFAULT_BRIGHTNESS 30
 
-__xdata uint8_t brightness = MAX_BRIGHTNESS; // default brightness
+__xdata uint8_t brightness = DEFAULT_BRIGHTNESS; // default brightness
 __xdata uint8_t saturation = 255;	// default saturation
 
 // Colors {H,S,V} HSV values go from 0 to 255
 
-__code HsvColor hp_bar_color = {96,211,59};
-__code HsvColor hp_alt_bar_color = {167,230,100};
-__code HsvColor en_bar_color = {255,204,50}; 
-__code HsvColor en_alt_bar_color = {43,191,80};
-__code HsvColor dash_bar_color = {160,233,60};
-__code HsvColor dash_alt_bar_color = {80,10,80}; 
+__code HsvColor hp_bar_color = {110,255,DEFAULT_BRIGHTNESS};
+__code HsvColor hp_alt_bar_color = {167,255,DEFAULT_BRIGHTNESS};
+__code HsvColor en_bar_color = {235,255,DEFAULT_BRIGHTNESS}; 
+__code HsvColor en_alt_bar_color = {25,255,DEFAULT_BRIGHTNESS};
+__code HsvColor dash_bar_color = {185,255,DEFAULT_BRIGHTNESS};
+__code HsvColor dash_alt_bar_color = {210,255,DEFAULT_BRIGHTNESS}; 
 
 __code HsvColor off_color = {0,0,0};
-__code HsvColor charged_color = {GREEN_HUE, 255 , MAX_BRIGHTNESS};
+__code HsvColor charged_color = {GREEN_HUE, 255 , DEFAULT_BRIGHTNESS};
 __code HsvColor boot_color = {160,180,100};
 
 
@@ -209,14 +211,14 @@ void update_buttons()
 void set_led(uint8_t index, const HsvColor *hsv)
 {
 	RgbColor rgb;	// temp rgb struct
-	RgbColor * rgb_ptr = &rgb; 
-	HsvToRgb(hsv, rgb_ptr);
+	//RgbColor * rgb_ptr = &rgb; 	// may not need pointer, just pass address of rgb
+	HsvToRgb(hsv, &rgb);
 	// rgb_ptr->r = 10; // Testing remove after
 	// rgb_ptr->b = 10;
 	// rgb_ptr->g = 10;
-	led_data[(index-1)*3 + 1] = rgb_ptr->r;
-	led_data[(index-1)*3 + 0] = rgb_ptr->g;
-	led_data[(index-1)*3 + 2] = rgb_ptr->b;
+	led_data[(index-1)*3 + 1] = rgb.r;
+	led_data[(index-1)*3 + 0] = rgb.g;
+	led_data[(index-1)*3 + 2] = rgb.b;
 }
 
 
@@ -258,8 +260,8 @@ void main()
 	uint16_t battery_charge = 0; // from 0 - 255 and also used for summing (need 16 bits)
 	uint8_t buffer_index = 0;
 	__xdata uint8_t battery_adc_buffer[AVERAGING_SIZE];
-	__xdata HsvColor batt_hsv;	// Battery Icon Color
-	__xdata HsvColor hsv = {0,128,MAX_BRIGHTNESS};	// testing
+	__xdata HsvColor batt_icon_hsv;	// Battery Icon Color
+	__xdata HsvColor hsv = {0,255,DEFAULT_BRIGHTNESS};	// testing in DEMO mode
 	
 	CfgFsys();
     mDelaymS(5);
@@ -351,9 +353,9 @@ void main()
 		battery_charge = map(battery_charge, BATT_MIN_ADC,BATT_MAX_ADC,0,255);
 
 		// map battery charge from red to green for fully charged
-		batt_hsv.h = map(battery_charge, 0,255,RED_HUE,GREEN_HUE);
-		batt_hsv.s = 255;
-		batt_hsv.v = brightness;
+		batt_icon_hsv.h = map(battery_charge, 0,255,RED_HUE,GREEN_HUE);
+		batt_icon_hsv.s = 255;
+		batt_icon_hsv.v = brightness;
 
 		// Check stat pin to determine if in CHARGING STATE
 		if(STAT == 0)
@@ -372,7 +374,7 @@ void main()
 			// TODO: Fade LED ON and OFF while charging based on battery charge
 			// When Constant Voltage, we can set pwr led to green for charged.
 
-			set_led(PWR_LED, &batt_hsv);
+			set_led(PWR_LED, &batt_icon_hsv);
 
 
 			// fill bar based on battery charge for now while testing and make dim
@@ -381,7 +383,7 @@ void main()
 			break;
 		case RUNNING:
 			// Light the power LED based on battery charge
-			set_led(PWR_LED, &batt_hsv);
+			set_led(PWR_LED, &batt_icon_hsv);
 			
 			// Cycle the bar values
 			if (hp_value < 2*(FULL_BAR_LENGTH) && HP_P_BTN_FELL)
@@ -418,7 +420,7 @@ void main()
 			if(HP_P_BTN_FELL)
 			{
 				// Increment saturation if less than 255
-				if (hsv.s < 255)
+				if (hsv.s < 251)
 				{
 					hsv.s += 5;
 				}
@@ -427,26 +429,26 @@ void main()
 			if(HP_N_BTN_FELL)
 			{
 				// Decrement saturation if more than 0
-				if(hsv.s > 0)
+				if(hsv.s > 4)
 				{
 					hsv.s -= 5;
 				}
 			}
 			if(EN_P_BTN_FELL)
 			{
-				// Increment saturation if less than 255
-				if (hsv.v < 255)
+				// Increment value if less than 255
+				if (hsv.v < 251)
 				{
-					hsv.v += 1;
+					hsv.v += 5;
 				}
 				
 			}
 			if(EN_N_BTN_FELL)
 			{
-				// Decrement saturation if more than 0
-				if(hsv.v > 0)
+				// Decrement value if more than 0
+				if(hsv.v > 4)
 				{
-					hsv.v -= 1;
+					hsv.v -= 5;
 				}
 			}
 
@@ -456,6 +458,8 @@ void main()
 				hsv.h = 5*i;
 				set_led(i,&hsv);
 			}
+			// Set battery icon led
+			set_led(PWR_LED, &batt_icon_hsv);
 			break;
 		default:
 			break;

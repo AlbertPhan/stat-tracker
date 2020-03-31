@@ -10,3 +10,6 @@
 *.mem
 *.asm
 *.rel
+.travis.yml
+.vscode/settings.json
+examples/.vscode/tasks.json

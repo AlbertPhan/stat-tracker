@@ -8,8 +8,8 @@
 
 void HsvToRgb(const HsvColor *hsv, RgbColor *rgb)
 {
-    __xdata uint8_t region, remainder, p, q, t;
-
+    __xdata uint8_t region; 
+    __xdata uint16_t remainder, p, q, t;
     if (hsv->s == 0)
     {
         rgb->r = hsv->v;
