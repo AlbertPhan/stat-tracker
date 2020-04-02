@@ -4,7 +4,7 @@
 * Author             : WCH
 * Version            : V1.1
 * Date               : 2017/07/05
-* Description        : CH554 触摸按键采样间隔设置、通道选择和切换和中断处理函数   
+* Description        : CH554 触摸按键采样间隔设置、通道选择和切换和中断处理函数   touch key sampling interval setting, channel selection and switching and interrupt processing functions
 *******************************************************************************/
 #include <stdint.h>
 
@@ -12,12 +12,13 @@
 #include "debug.h"
 #include "touchkey.h"
 
-uint16_t	KeyFree[KEY_LAST-KEY_FIRST+1];                                        //触摸空闲值存储，用于比较按键状态，如果采样值小于基准值表明按键按下
-volatile uint8_t KeyBuf;                                                               //触摸按键状态，为0表示无按键，非0表示当前检测按键被按下
+// testing ADDED + KEY_FIRST. keyfree array doesnt allocate proper number of members if KEY_FIRST doesnt start at 0. So make array extra big for now
+volatile uint16_t	KeyFree[KEY_LAST-KEY_FIRST+1 + KEY_FIRST];                                        //触摸空闲值存储，用于比较按键状态，如果采样值小于基准值表明按键按下 Touch the idle value store, used to compare the state of the key, if the sample value is less than the reference value, it indicates that the key is pressed
+volatile uint8_t KeyBuf;                                                               //触摸按键状态，为0表示无按键，非0表示当前检测按键被按下 Touch the key state, 0 means no key, non-zero means the current detection key is pressed
 
 /*******************************************************************************
 * Function Name  : GetTouchKeyFree()
-* Description    : 获取触摸按键空闲状态键值
+* Description    : 获取触摸按键空闲状态键值 Get the idle key value of the touch key
 * Input          : None								 
 * Output         : None
 * Return         : None
@@ -26,17 +27,17 @@ void GetTouchKeyFree()
 {
   uint8_t i,j;
   uint8_t TmpSum = 0;
-  KeyBuf = 0;                                                                 //初始化设置为无按键状态
+  KeyBuf = 0;                                                                 //初始化设置为无按键状态 Initially set to no key state
   for(i=KEY_FIRST;i<(KEY_LAST+1);i++)
   {
-		j = KEY_BASE_SAMPLE_TIME;                                                 //采多次求平均值作为采样参考
-	  TKEY_CTRL = (TKEY_CTRL & 0xF8 | i)+1;                                     //设置采样通道
+		j = KEY_BASE_SAMPLE_TIME;                                                 //采多次求平均值作为采样参考 take multiple averages as a sampling reference
+	  TKEY_CTRL = (TKEY_CTRL & 0xF8 | i)+1;                                     //设置采样通道  Set the sampling channel
     while(j--)
     {
-        while((TKEY_CTRL&bTKC_IF) == 0);                                      //bTKC_IF变为1时，本周期采样完成
-        TmpSum += TKEY_DAT&0x0F;                                              //采样值稳定，取低4位就够了
+        while((TKEY_CTRL&bTKC_IF) == 0);                                      //bTKC_IF变为1时，本周期采样完成 When bTKC_IF becomes 1, the sampling of this cycle is completed
+        TmpSum += TKEY_DAT&0x0F;                                              //采样值稳定，取低4位就够了Sampling value is stable, the lower 4 bits are enough
     }		
-    KeyFree[i] = TKEY_DAT&0x07F0 + TmpSum/5;                                  //保存采样值 
+    KeyFree[i] = TKEY_DAT&0x07F0 + TmpSum/KEY_BASE_SAMPLE_TIME;                                  //保存采样值 Save the sample value
   }
 #if INTERRUPT_TouchKey
     IE_TKEY = 1;                                                              //使能Touch_Key中断
@@ -75,7 +76,7 @@ void	TouchKeyInterrupt( void ) interrupt INT_NO_TKEY using 1                //To
     KeyData = TKEY_DAT;                                                       //保持87us,尽快取走
     ch = TKEY_CTRL&7;                                                         //获取当前采样通道
     if ( ch > KEY_LAST ){
-       TKEY_CTRL = TKEY_CTRL & 0xF8 | KEY_FIRST;                              //从首通道开始采样
+       TKEY_CTRL = (TKEY_CTRL & 0xF8 | KEY_FIRST) + 1;                              //从首通道开始采样
     }			
     else
     {
@@ -89,29 +90,29 @@ void	TouchKeyInterrupt( void ) interrupt INT_NO_TKEY using 1                //To
 #else
 /*******************************************************************************
 * Function Name  : TouchKeyChannelQuery()
-* Description    : 触摸按键通道状态查询
+* Description    : 触摸按键通道状态查询 Touch key channel status query
 * Input          : None
 * Output         : None
 * Return         : None
 *******************************************************************************/
 void TouchKeyChannelQuery()
 {
-          uint8_t	ch;
+    uint8_t	ch; // touch channel - indexed from 1
     uint16_t KeyData;
 
-    while((TKEY_CTRL&bTKC_IF) == 0);                                          //bTKC_IF变为1时，本周期采样完成
-    KeyData = TKEY_DAT;                                                       //保持87us,尽快取走
-    ch = TKEY_CTRL&7;                                                         //获取当前采样通道
+    while((TKEY_CTRL&bTKC_IF) == 0);                                          //bTKC_IF变为1时，本周期采样完成 /When bTKC_IF becomes 1, the sampling of this cycle is completed
+    KeyData = TKEY_DAT;                                                       //保持87us,尽快取走 Data is kept 87us, take it away as soon as possible
+    ch = TKEY_CTRL&7;                                                         //获取当前采样通道 Get the current sampling channel
     if ( ch > KEY_LAST ){
-       TKEY_CTRL = TKEY_CTRL & 0xF8 | KEY_FIRST;                              //从首通道开始采样
+       TKEY_CTRL = (TKEY_CTRL & 0xF8 | KEY_FIRST) + 1;                              //从首通道开始采样  Sampling from the first channel
     }			
     else
     {
-       TKEY_CTRL ++;                                                          //切换至下一个采样通道
+       TKEY_CTRL ++;                                                          //切换至下一个采样通道 Switch to the next sampling channel
     }
-    if ( KeyData < (KeyFree[ch-KEY_FIRST] - KEY_ACT) )                        //如条件满足，代表按键按下   
+    if ( KeyData < (KeyFree[ch-KEY_FIRST] - KEY_ACT) )                        //如条件满足，代表按键按下   If the conditions are met, the key is pressed
     {
-        KeyBuf=ch;                                                            //可以在此处进行按键动作处理或者置标志通知main进行处理
+        KeyBuf=ch-1;                                                            //可以在此处进行按键动作处理或者置标志通知main进行处理 You can process key actions here or set a flag to notify main
     }
 }
 #endif

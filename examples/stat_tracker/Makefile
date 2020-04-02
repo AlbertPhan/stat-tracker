@@ -7,7 +7,9 @@ C_FILES = \
 	../../include/color_utils.c \
 	../../include/bitbang.c \
 	../../include/adc.c \
-	../../include/debug.c
+	../../include/debug.c\
+	../../include/timer.c\
+	../../include/touch.c\
 
 ASM_FILES = \
 	bitbang_asm.asm
