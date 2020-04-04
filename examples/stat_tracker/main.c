@@ -4,16 +4,17 @@ Manages buttons to increment points up and down
 
 TODO:
 [] change retrigger to delay + repeat (need timer)
-[] cdc usb serial
+[] cdc usb serial - if needed for debugging
 [x] ADC
 [] Add timer for millis()
 [] charging status
 [x] change to HSV for LEDs (convert functions to use HSV)
-[] Touch buttons for brightness control
+[x] Touch buttons for brightness control
 [x] FIX HSVtoRGB() not properly converting for saturation values above 128
-[] Add configuration states using multi button presses
+[] Add color configuration states using multi button presses
 [] Fix led showing garbage data on power on
-[] Fix battery icon showing wrong hue
+[x] Fix battery icon showing wrong hue - ADC related? ADC and touch inputs were damaged from ESD. Series protection resitors were added
+[] Add eeprom code to remember health states
 */
 #include <stdint.h>
 
@@ -45,15 +46,9 @@ TODO:
 
 // ADC defines
 #define BATT_MIN_ADC 163 // ADC count for 3.2V/5V * 255
+#define BATT_3V3_ADC 168 // ADC count for 3.3V/5V * 255
+#define BATT_3V9_ADC 199 // ADC count for 3.9V/5V * 255
 #define BATT_MAX_ADC 214 // ADC count for 4.2V/5V * 255
-
-// Colors {R,G,B}
-//__code uint8_t hp_bar_color[] = {10,60,30}; 
-//__code uint8_t hp_alt_bar_color[] = {10,20,100};
-// __code uint8_t en_bar_color[] = {50,10,20}; 
-// __code uint8_t en_alt_bar_color[] = {80,80,20}; 
-// __code uint8_t dash_bar_color[] = {5,20,60}; 
-// __code uint8_t dash_alt_bar_color[] = {80,10,80}; 
 
 #define RED_HUE 0
 #define GREEN_HUE 85
@@ -67,17 +62,16 @@ __xdata uint8_t brightness = DEFAULT_BRIGHTNESS; // default brightness
 __xdata uint8_t saturation = DEFAULT_SATURATION;	// default saturation
 
 // Colors {H,S,V} HSV values go from 0 to 255
-
-__xdata HsvColor hp_bar_color = {110,DEFAULT_SATURATION,DEFAULT_BRIGHTNESS};
-__xdata HsvColor hp_alt_bar_color = {167,DEFAULT_SATURATION,DEFAULT_BRIGHTNESS};
-__xdata HsvColor en_bar_color = {235,DEFAULT_SATURATION,DEFAULT_BRIGHTNESS}; 
-__xdata HsvColor en_alt_bar_color = {35,DEFAULT_SATURATION,DEFAULT_BRIGHTNESS};
-__xdata HsvColor dash_bar_color = {185,DEFAULT_SATURATION,DEFAULT_BRIGHTNESS};
-__xdata HsvColor dash_alt_bar_color = {210,DEFAULT_SATURATION,DEFAULT_BRIGHTNESS};
-__xdata HsvColor off_color = {0,0,0};
-__xdata HsvColor charged_color = {GREEN_HUE,DEFAULT_SATURATION, DEFAULT_BRIGHTNESS};
-__xdata HsvColor boot_color = {160,180,DEFAULT_BRIGHTNESS};
-
+__xdata HsvColor hsv_health = {110,DEFAULT_SATURATION,DEFAULT_BRIGHTNESS};
+__xdata HsvColor hsv_health_alt = {167,DEFAULT_SATURATION,DEFAULT_BRIGHTNESS};
+__xdata HsvColor hsv_energy = {235,DEFAULT_SATURATION,DEFAULT_BRIGHTNESS}; 
+__xdata HsvColor hsv_energy_alt = {35,DEFAULT_SATURATION,DEFAULT_BRIGHTNESS};
+__xdata HsvColor hsv_dash = {185,DEFAULT_SATURATION,DEFAULT_BRIGHTNESS};
+__xdata HsvColor hsv_dash_alt = {210,DEFAULT_SATURATION,DEFAULT_BRIGHTNESS};
+__xdata HsvColor hsv_charged = {GREEN_HUE,DEFAULT_SATURATION, DEFAULT_BRIGHTNESS};
+__xdata HsvColor hsv_charging = {30, DEFAULT_SATURATION,DEFAULT_BRIGHTNESS};
+__xdata HsvColor hsv_boot = {160,180,DEFAULT_BRIGHTNESS};
+__xdata HsvColor hsv_off = {0,0,0};
 
 
 
@@ -112,15 +106,15 @@ SBIT(DASH_BTN, PORT3, PIN_DASH_BTN);
 #define LED_COUNT (46)
 
 // States
-#define MAX_STATES 5
-#define CHARGING 1	//
+#define MAX_STATES 6
+#define BATTERY 1	//
 #define RUNNING 2	//
-#define DEMO 3 		//
+#define COLOR_PALLETTE 3 		//
 #define TOUCHKEY1 4 //
 #define TOUCHKEY2 5 // 
+#define TIMER 6 
 
 __xdata uint8_t led_data[LED_COUNT*3];
-//__xdata uint32_t millis_cnt;
 
 // button structure
 typedef struct button
@@ -259,11 +253,7 @@ void update_buttons()
 void set_led(uint8_t index, const HsvColor *hsv)
 {
 	RgbColor rgb;	// temp rgb struct
-	//RgbColor * rgb_ptr = &rgb; 	// may not need pointer, just pass address of rgb
 	HsvToRgb(hsv, &rgb);
-	// rgb_ptr->r = 10; // Testing remove after
-	// rgb_ptr->b = 10;
-	// rgb_ptr->g = 10;
 	led_data[(index-1)*3 + 1] = rgb.r;
 	led_data[(index-1)*3 + 0] = rgb.g;
 	led_data[(index-1)*3 + 2] = rgb.b;
@@ -271,7 +261,7 @@ void set_led(uint8_t index, const HsvColor *hsv)
 
 
 // Fill in a bar of LEDs
-inline void fill_bar(uint8_t start, uint8_t end, uint8_t value, const HsvColor *hsv)
+void fill_bar(uint8_t start, uint8_t end, uint8_t value, const HsvColor *hsv)
 {
 	uint8_t i;
 	for (i = 0; i <= end-start; i++)
@@ -279,8 +269,14 @@ inline void fill_bar(uint8_t start, uint8_t end, uint8_t value, const HsvColor *
 		if (i < value)	// LED ON
 			set_led(start+i, hsv);
 		else			// LED OFF
-			set_led(start+i, &off_color);
+			set_led(start+i, &hsv_off);
 	}
+}
+
+// Clear all of display
+inline void clear_display()
+{
+	fill_bar(HP_BAR_START, PWR_LED, 255, &hsv_off);
 }
 
 /*
@@ -293,21 +289,52 @@ toLow: the lower bound of the value’s target range.
 toHigh: the upper bound of the value’s target range.
 
 */
-inline uint16_t map(uint16_t x, uint16_t in_min, uint16_t in_max, uint16_t out_min, uint16_t out_max)
+uint16_t map(uint16_t x, uint16_t in_min, uint16_t in_max, uint16_t out_min, uint16_t out_max)
 {
-	return (uint32_t)((x - in_min) * ((out_max - out_min) / (in_max - in_min)) + out_min);
+	// clamp min and max values
+	if(x > in_max)
+	{
+		x = in_max;
+	}
+	if(x < in_min)
+	{
+		x = in_min;
+	}
+	return ((x - in_min) * (out_max - out_min) / (in_max - in_min) + out_min);
 }
 
-
-inline void set_battery_icon_led()
+uint8_t map8bit(uint8_t x, uint8_t in_min, uint8_t in_max, uint8_t out_min, uint8_t out_max)
 {
-	// Do stuff while CHARGING
-	if(CHARGING)
+	// clamp min and max values
+	if(x > in_max)
 	{
-		// Fade LED on and off - colour is charge
-		;
+		x = in_max;
 	}
-	// Do stuff while RUNNING
+	if(x < in_min)
+	{
+		x = in_min;
+	}
+	return ((x - in_min) * (out_max - out_min) / (in_max - in_min) + out_min);
+}
+
+void set_battery_icon_led(uint8_t batt_charge_adc)
+{
+	__xdata static HsvColor hsv_batt_icon = {0,DEFAULT_SATURATION,DEFAULT_BRIGHTNESS};
+	hsv_batt_icon.v = brightness;
+	// Do stuff while battery is charging
+	if(STAT == 0)	// If charging 
+	{
+		// TODO: Fade LED on and off - colour is charge
+		set_led(PWR_LED, &hsv_charging);	// orange for now
+	}
+	else	// batt icon while not charging/ fully charged
+	{
+		// Show battery charge from red to green
+		hsv_batt_icon.h = map(batt_charge_adc,BATT_MIN_ADC,BATT_MAX_ADC,RED_HUE,GREEN_HUE);
+		set_led(PWR_LED,&hsv_batt_icon);
+
+		// TODO: If battery critically low like 3.3V to 3.2V , flash red
+	}
 }
 
 
@@ -317,14 +344,11 @@ void main()
 	uint8_t energy_value = 10;
 	uint8_t dash_value = 2;
 	uint8_t state = RUNNING;	// Default State
-	uint16_t battery_charge = 0; // from 0 - 255 and also used for summing (need 16 bits)
+	uint16_t battery_charge_adc = 0; // from 0 - 255 and also used for summing (need 16 bits)
 	uint8_t buffer_index = 0;
 	uint16_t i;	// General Purpose index
 	__xdata uint8_t battery_adc_buffer[AVERAGING_SIZE];
-	__xdata HsvColor batt_icon_hsv;	// Battery Icon Color 
-	batt_icon_hsv.s = DEFAULT_SATURATION;
-	batt_icon_hsv.v = DEFAULT_BRIGHTNESS;
-	__xdata HsvColor hsv = {0,DEFAULT_SATURATION,DEFAULT_BRIGHTNESS};	// testing in DEMO mode
+	__xdata HsvColor hsv = {0,DEFAULT_SATURATION,DEFAULT_BRIGHTNESS};	// General Purpose hsv
 	// Init button states
 	HP_P_BTN.ACTIVATED = 0;
 	HP_N_BTN.ACTIVATED = 0;
@@ -348,6 +372,7 @@ void main()
     bitbangWs2812(LED_COUNT, led_data); // Blank out all leds to get rid of garbage data (not working)
 	mDelaymS(5);
 
+	// GPIO Setup *****************************
 	// Set up programming pushbutton
 	P3_MOD_OC |= (1<<BOOT_PB);	// Open drain	
 	P3_DIR_PU |= (1<<BOOT_PB);	// pull-up enabled
@@ -372,8 +397,12 @@ void main()
 	// Touchkey inputs as floating input mode no pull up
 	P1_DIR_PU &= ~(1<<PIN_TIN1 | 1 << PIN_TIN2);	// P1.4 TIN 2 and P1.1 TIN1
 
-	//enable_timer0_interrupt(); // off for now while testing
 
+	// Module Initilizations ******************************************************
+	EA = 1;	// Enable global interrupts
+	timer0_init();	// timer0 for millis()
+	enable_timer0_interrupt(); 
+	
     ADCInit(1); 	// Set fast mode adc
 	ADC_ChannelSelect(2);	// Set ADC channel AIN2 for VBAT
 
@@ -393,66 +422,44 @@ void main()
 	}
 
 	
+	// Main loop ************************************************************
     while (1) 
 	{
 		update_buttons();
 		
+		// ADC Loop
+
 		// Start battery voltage adc stuff
 		ADC_START = 1;	// Start ADC conversion
 		while(ADC_START == 1); // Wait for conversion done
 		battery_adc_buffer[buffer_index] = ADC_DATA;// add to averaging Buffer
-		// if(buffer_index < AVERAGING_SIZE)	// if not full
-		// {
-		// 	buffer_index++;
-		// }
-		// else // full then reset index
-		// {
-		// 	buffer_index = 0;
-		// }
-
-		// // Start Averaging math
-		// battery_charge = 0; // reset battery_charge
-		// for(i = 0; i < AVERAGING_SIZE; i++)
-		// {
-		// 	// Add all values in buffer
-		// 	battery_charge += battery_adc_buffer[i];
-		// }
-		// // Divide by AVERAGING_SIZE to get average
-		// battery_charge = battery_charge/AVERAGING_SIZE;
-		// Map ADC value to a battery charge range 0-255 and clamp to min or max values
-
-		battery_charge = ADC_DATA; 	// TESTING not averaging
-		if(battery_charge > BATT_MAX_ADC)
+		if(buffer_index < AVERAGING_SIZE)	// if not full
 		{
-			battery_charge = BATT_MAX_ADC;
+			buffer_index++;
 		}
-		if(battery_charge < BATT_MIN_ADC)
+		else // full then reset index
 		{
-			battery_charge = BATT_MIN_ADC;
+			buffer_index = 0;
 		}
-		battery_charge = map(battery_charge,BATT_MIN_ADC,BATT_MAX_ADC,0,255);
 
-		// map battery charge from red to green for fully charged
-		batt_icon_hsv.h = map(battery_charge,0,255,RED_HUE,GREEN_HUE);
+		// Start Averaging math	
+		battery_charge_adc = 0; // reset battery_charge_adc
+		for(i = 0; i < AVERAGING_SIZE; i++)
+		{
+			// Add all values in buffer
+			battery_charge_adc += battery_adc_buffer[i];
+		}
+		// Divide by AVERAGING_SIZE to get average
+		battery_charge_adc = battery_charge_adc/AVERAGING_SIZE;
 		
-		// Check stat pin to determine if in CHARGING STATE
-		// if(STAT == 0)
-		// {
-		// 	state = CHARGING;	// TESTING DEMO state change to CHARGING after
-		// }
-		// else
-		// {
-		// 	state = RUNNING;
-		// }
-
 		// Brightness control
 		if(BRIGHTNESS_UP_TKEY.ACTIVATED)
 		{
 			// Increment value if <= MAX_BRIGHTNESS - BRIGHTNESS_STEP
-				if (brightness <= MAX_BRIGHTNESS - BRIGHTNESS_STEP)
-				{
-					brightness += BRIGHTNESS_STEP;
-				}
+			if (brightness <= MAX_BRIGHTNESS - BRIGHTNESS_STEP)
+			{
+				brightness += BRIGHTNESS_STEP;
+			}
 		}
 		if(BRIGHTNESS_DOWN_TKEY.ACTIVATED)
 		{
@@ -463,15 +470,15 @@ void main()
 			}
 		}
 		// change all colors brightness
-		hp_bar_color.v = brightness; 
-		hp_alt_bar_color.v = brightness;
-		en_bar_color.v =  brightness;
-		en_alt_bar_color.v = brightness;
-		dash_bar_color.v = brightness;
-		dash_alt_bar_color.v = brightness; 
-		charged_color.v = brightness;
-		boot_color.v = brightness;
-		batt_icon_hsv.v = brightness;
+		hsv_health.v = brightness; 
+		hsv_health_alt.v = brightness;
+		hsv_energy.v =  brightness;
+		hsv_energy_alt.v = brightness;
+		hsv_dash.v = brightness;
+		hsv_dash_alt.v = brightness; 
+		hsv_charged.v = brightness;
+		hsv_charging.v = brightness;
+		hsv_boot.v = brightness;
 
 		// TESTING using dash buttons to switch between states
 		if(DASH_P_BTN.ACTIVATED)
@@ -483,24 +490,23 @@ void main()
 		}
 		if(DASH_N_BTN.ACTIVATED)
 		{
-			if(state > CHARGING)
+			if(state > BATTERY)
 			{
 				state--;
 			}
 		}
 
 		
+		clear_display();
+
 		switch (state)
 		{
-		case CHARGING:
-			// TODO: Fade LED ON and OFF while charging based on battery charge
-			// When Constant Voltage, we can set pwr led to green for charged.
-
-
-
-			// fill bar based on battery charge for now while testing and make dim
-			fill_bar(HP_BAR_START, DASH_BAR_END, (map(battery_charge, 0, 255, 0, FULL_BAR_LENGTH)), &hp_bar_color);
-			set_led(PWR_LED, &batt_icon_hsv);
+		case BATTERY:
+			// fill bar based on battery charge for now while testing
+			hsv.h = hsv_health.h;
+			hsv.s = DEFAULT_SATURATION;
+			hsv.v = 5; // low brightness to not drain battery while charging
+			fill_bar(HP_BAR_START, EN_BAR_END, map8bit(battery_charge_adc,BATT_MIN_ADC,BATT_MAX_ADC,0,FULL_BAR_LENGTH*2), &hsv);
 			break;
 		case RUNNING:
 			
@@ -524,22 +530,19 @@ void main()
 			
 			// Draw bars
 
-			fill_bar(HP_BAR_START, HP_BAR_END, hp_value, &hp_bar_color);
+			fill_bar(HP_BAR_START, HP_BAR_END, hp_value, &hsv_health);
 			if (hp_value > FULL_BAR_LENGTH)
-				fill_bar(HP_BAR_START, HP_BAR_START - 1 + hp_value - FULL_BAR_LENGTH, DEFAULT_SATURATION, &hp_alt_bar_color);
+				fill_bar(HP_BAR_START, HP_BAR_START - 1 + hp_value - FULL_BAR_LENGTH, DEFAULT_SATURATION, &hsv_health_alt);
 			
-			fill_bar(EN_BAR_START, EN_BAR_END, energy_value, &en_bar_color);
+			fill_bar(EN_BAR_START, EN_BAR_END, energy_value, &hsv_energy);
 			if (energy_value > FULL_BAR_LENGTH)
-				fill_bar(EN_BAR_START, EN_BAR_START - 1 + energy_value - FULL_BAR_LENGTH, DEFAULT_SATURATION, &en_alt_bar_color);
+				fill_bar(EN_BAR_START, EN_BAR_START - 1 + energy_value - FULL_BAR_LENGTH, DEFAULT_SATURATION, &hsv_energy_alt);
 			
-			fill_bar(DASH_BAR_START, DASH_BAR_END, dash_value, &dash_bar_color);
+			fill_bar(DASH_BAR_START, DASH_BAR_END, dash_value, &hsv_dash);
 			if (dash_value > DASH_BAR_LENGTH)
-				fill_bar(DASH_BAR_START, DASH_BAR_START - 1 + dash_value - DASH_BAR_LENGTH, DEFAULT_SATURATION, &dash_alt_bar_color);
-
-			// Light the power LED based on battery charge
-			set_led(PWR_LED, &batt_icon_hsv);		
+				fill_bar(DASH_BAR_START, DASH_BAR_START - 1 + dash_value - DASH_BAR_LENGTH, DEFAULT_SATURATION, &hsv_dash_alt);
 			break;
-		case DEMO:
+		case COLOR_PALLETTE:
 			// colour test pallette
 			if(HP_P_BTN.ACTIVATED)
 			{
@@ -558,23 +561,8 @@ void main()
 					hsv.s -= 5;
 				}
 			}
-			if(EN_P_BTN.ACTIVATED)
-			{
-				// Increment value if less than 255
-				if (hsv.v < 251)
-				{
-					hsv.v += 5;
-				}
-				
-			}
-			if(EN_N_BTN.ACTIVATED)
-			{
-				// Decrement value if more than 0
-				if(hsv.v > 4)
-				{
-					hsv.v -= 5;
-				}
-			}
+
+			hsv.v = brightness;
 
 			for(i = 0; i < LED_COUNT; i++)
 			{
@@ -582,55 +570,66 @@ void main()
 				hsv.h = 5*i;
 				set_led(i,&hsv);
 			}
-			// Set battery icon led
-			set_led(PWR_LED, &batt_icon_hsv);
 			break;
 		case TOUCHKEY1: // Debug data for TIN1 BRIGHTNESS_DOWN_TOUCHKEY_NUM
-			fill_bar(HP_BAR_START,PWR_LED,PWR_LED,&off_color);
+			fill_bar(HP_BAR_START,PWR_LED,PWR_LED,&hsv_off);
 			// Display nokey data
-			fill_bar(HP_BAR_START,HP_BAR_END, map(BRIGHTNESS_DOWN_TKEY.NOKEY-TOUCH_HYSTERESIS,0,2^14, 0,FULL_BAR_LENGTH), &hp_bar_color);
+			fill_bar(HP_BAR_START,HP_BAR_END, map(BRIGHTNESS_DOWN_TKEY.NOKEY-TOUCH_HYSTERESIS,0,2^14, 0,FULL_BAR_LENGTH), &hsv_health);
 			// Display capacitance data
-			fill_bar(EN_BAR_START,EN_BAR_END, map(BRIGHTNESS_DOWN_TKEY.DATA,0,2^14, 0,FULL_BAR_LENGTH), &en_bar_color);
+			fill_bar(EN_BAR_START,EN_BAR_END, map(BRIGHTNESS_DOWN_TKEY.DATA,0,2^14, 0,FULL_BAR_LENGTH), &hsv_energy);
 
-			set_led(DASH_BAR_START, &dash_bar_color);
+			set_led(DASH_BAR_START, &hsv_dash);
 
 			// Turn on dash leds if touch data is less than nokey threshold
 			if(BRIGHTNESS_DOWN_TKEY.DATA < BRIGHTNESS_DOWN_TKEY.NOKEY - TOUCH_HYSTERESIS)
 			{
-				set_led(DASH_BAR_END-1, &hp_bar_color);
+				set_led(DASH_BAR_END-1, &hsv_health);
 			}
 			if(BRIGHTNESS_UP_TKEY.DATA < BRIGHTNESS_UP_TKEY.NOKEY - TOUCH_HYSTERESIS)
 			{
-				set_led(DASH_BAR_END, &hp_bar_color);
+				set_led(DASH_BAR_END, &hsv_health);
 			}
-			// Set battery icon led
-			set_led(PWR_LED, &batt_icon_hsv);
 			break;
 		case TOUCHKEY2:	// Debug data for TIN2 BRIGHTNESS_UP_TOUCHKEY_NUM
-			fill_bar(HP_BAR_START,PWR_LED,PWR_LED,&off_color);
+			fill_bar(HP_BAR_START,PWR_LED,PWR_LED,&hsv_off);
 			// Display capacitance data values on hp and en bars
-			fill_bar(HP_BAR_START,HP_BAR_END, map(BRIGHTNESS_UP_TKEY.NOKEY-TOUCH_HYSTERESIS,0,2^14, 0,FULL_BAR_LENGTH), &hp_bar_color);
+			fill_bar(HP_BAR_START,HP_BAR_END, map(BRIGHTNESS_UP_TKEY.NOKEY-TOUCH_HYSTERESIS,0,2^14, 0,FULL_BAR_LENGTH), &hsv_health);
 			// Display capacitance data
-			fill_bar(EN_BAR_START,EN_BAR_END, map(BRIGHTNESS_UP_TKEY.DATA,0,2^14, 0,FULL_BAR_LENGTH), &en_bar_color);
+			fill_bar(EN_BAR_START,EN_BAR_END, map(BRIGHTNESS_UP_TKEY.DATA,0,2^14, 0,FULL_BAR_LENGTH), &hsv_energy);
 
-			fill_bar(DASH_BAR_START,DASH_BAR_START + 1,2, &dash_bar_color);	// turn on 2 dash leds to show state
+			fill_bar(DASH_BAR_START,DASH_BAR_START + 1,2, &hsv_dash);	// turn on 2 dash leds to show state
 
 			// Turn on dash leds if touch data is less than nokey threshold
 			if(BRIGHTNESS_DOWN_TKEY.DATA < BRIGHTNESS_DOWN_TKEY.NOKEY - TOUCH_HYSTERESIS)
 			{
-				set_led(DASH_BAR_END-1, &hp_bar_color);
+				set_led(DASH_BAR_END-1, &hsv_health);
 			}
 			if(BRIGHTNESS_UP_TKEY.DATA < BRIGHTNESS_UP_TKEY.NOKEY - TOUCH_HYSTERESIS)
 			{
-				set_led(DASH_BAR_END, &hp_bar_color);
+				set_led(DASH_BAR_END, &hsv_health);
 			}
-			// Set battery icon led
-			set_led(PWR_LED, &batt_icon_hsv);
+			break;
+		case TIMER:
+			// display millis
+			hsv.h = BLUE_HUE;
+			
+			// Display 1/100ths of seconds in 1-10 leds
+			fill_bar(HP_BAR_START, HP_BAR_START + 9,map(millis()/10%10+1,0,10,0,10),&hsv);
+			// Display 1/10ths of seconds in 11-20
+			fill_bar(HP_BAR_START + 10, HP_BAR_END,map(millis()/100%10+1,0,10,0,10),&hsv);
+			// Display seconds in 21-30
+			fill_bar(EN_BAR_START, EN_BAR_START + 9,map(millis()/1000%10+1,0,10,0,10),&hsv);
+			// Display decaseconds in 31-40
+			fill_bar(EN_BAR_START + 10, EN_BAR_END,map(millis()/10000%10+1,0,10,0,10),&hsv);
 			break;
 		default:
 			break;
 		}
 		
+		// Display battery icon
+		set_battery_icon_led(battery_charge_adc);
+
+
         // Display led_data
 		EA = 0; // Disable global interrupts
         bitbangWs2812(LED_COUNT, led_data);
@@ -647,7 +646,7 @@ void main()
 		led_data[i] = 0;
 	
 	// Light the power LED to indicate boot mode
-	set_led(PWR_LED, &boot_color);
+	set_led(PWR_LED, &hsv_boot);
 
 
 	EA = 0;	// Disable global interrupts while bitbanging
