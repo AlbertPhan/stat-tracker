@@ -7,11 +7,11 @@
 
 #define CPU_FREQ 16 // Mhz
 #define RELOAD_VALUE 56 // This gives 200 counts = 50us
-#define MICROSECONDS_PER_SECOND 1000 // 1000us = 1s
-#define OVERFLOWS 20 // how many overflows for 1 second
+//#define MICROSECONDS_PER_SECOND 1000000 // 1000000us = 1s
+#define OVERFLOWS 20 // how many overflows for 1 ms
 //#define OVERFLOWS ((MICROSECONDS_PER_SECOND/((256-RELOAD_VALUE)*(1*100/(CPU_FREQ/4))))/100) //
 
-volatile uint32_t millis_cnt = 0;
+__xdata volatile uint32_t millis_cnt = 0;
 
 // Set timer up for millis count
 void timer0_init()

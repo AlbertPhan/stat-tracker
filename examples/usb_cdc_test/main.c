@@ -5,8 +5,9 @@
 /*
 TODO:
 [ ] Modify UsbCdc_processInput() to handle received data
-[ ] Modify / remove prepareUsbIds(), we don't want to store IDs in EEPROM
-[ ] Modify / remove readNameFromEeprom() 
+[x] Modify / remove prepareUsbIds(), we don't want to store IDs in EEPROM
+[x] Modify / remove readNameFromEeprom() 
+[ ] Find some way to know when USB is connected
 */
 
 #include <ch554.h>
@@ -62,18 +63,34 @@ void main() {
 	P3_DIR_PU |= (1<<BOOT_PB);	// pull-up enabled	
     
   
+	
+	uint16_t idle_count = 0;
 
     while (1) 
 	{
 		UsbCdc_processOutput();
 		UsbCdc_processInput();
 
-		mDelaymS(10);
-        LED = !LED;
+		mDelaymS(1);
+
+		if (idle_count < 1000)
+		{
+			idle_count++;
+		}
+		else
+		{
+			LED = 1;
+			idle_count = 0;
+			UsbCdc_puts("Hello, I am CH552\r\n");
+			LED = 0;
+		}
 		
-		if (BOOT == 1)
-			break; 		
+		// BOOT input doesn't work while USB is active
+		//if (BOOT == 1)
+		//	break; 		
     }
+	
+	LED = 0;
 	
 	jumpToBootloader();
 }

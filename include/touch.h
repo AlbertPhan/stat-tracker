@@ -2,7 +2,7 @@
 
 
 #define TOUCH_AVERAGING_SIZE 50 // number of samples to take for nokey value
-#define TOUCH_HYSTERESIS 1000	// Hyseresis amount 
+#define TOUCH_HYSTERESIS 200	// Hyseresis amount 
 
 #define enableTouchKeyInterrupt() (IE_TKEY = 1)    // Interrupt enable - turn on after getting no key data
 #define touchKeyOFF() {TKEY_CTRL &= 0b11111000;}  // Touch Module off

@@ -19,12 +19,12 @@
 /**
  * Last setup request
  */
-uint8_t g_SetupReq;
+__xdata uint8_t g_SetupReq;
 
 /**
  * USB Configuration, can be read and written by the host
  */
-uint8_t g_UsbConfig;
+__xdata uint8_t g_UsbConfig;
 
 /**
  * Pointer to the current configuration data,
@@ -36,10 +36,10 @@ const uint8_t* g_pDescr;
 /**
  * Setup length, is decremented if a block is sent, see g_pDescr
  */
-uint16_t g_SetupLen;
+__xdata uint16_t g_SetupLen;
 
 // Buffer for dynamic generated setup responses
-uint8_t g_SetupRamBuffer[34];
+__xdata uint8_t g_SetupRamBuffer[34];
 
 /**
  * Use the received data as Setup request
@@ -757,9 +757,31 @@ void UsbCdc_putc(uint8_t tdata) {
  * Send uint8_t over CDC Serial port
  */
 void UsbCdc_puti(uint8_t value) {
-	uint8_t i = 3;
-	char data[4];
+	__xdata uint8_t i = 3;
+	__xdata char data[4];
 	data[3] = 0;
+
+	if (value == 0) {
+		UsbCdc_putc('0');
+		return;
+	}
+
+	while (value > 0) {
+		i--;
+		data[i] = (value % 10) + '0';
+		value /= 10;
+	}
+
+	UsbCdc_puts(data + i);
+}
+
+/**
+ * Send uint32_t over CDC Serial port
+ */
+void UsbCdc_puti32(uint32_t value) {
+	__xdata uint8_t i = 10;	// 10 digits to represent 32 bit
+	__xdata char data[11];
+	data[10] = 0;
 
 	if (value == 0) {
 		UsbCdc_putc('0');

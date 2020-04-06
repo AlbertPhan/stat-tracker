@@ -1,0 +1,77 @@
+[
+	{
+		"path": "$ROOTPATH$\\examples\\stat_tracker\\main.c",
+		"bookmarks": [
+			{
+				"line": 71,
+				"column": 0,
+				"label": ""
+			},
+			{
+				"line": 87,
+				"column": 0,
+				"label": ""
+			},
+			{
+				"line": 178,
+				"column": 21,
+				"label": "update_buttons()"
+			},
+			{
+				"line": 323,
+				"column": 7,
+				"label": ""
+			},
+			{
+				"line": 357,
+				"column": 0,
+				"label": ""
+			},
+			{
+				"line": 385,
+				"column": 0,
+				"label": ""
+			},
+			{
+				"line": 484,
+				"column": 17,
+				"label": ""
+			},
+			{
+				"line": 510,
+				"column": 7,
+				"label": ""
+			},
+			{
+				"line": 546,
+				"column": 1,
+				"label": ""
+			},
+			{
+				"line": 717,
+				"column": 3,
+				"label": ""
+			},
+			{
+				"line": 724,
+				"column": 3,
+				"label": ""
+			},
+			{
+				"line": 738,
+				"column": 65,
+				"label": ""
+			},
+			{
+				"line": 747,
+				"column": 70,
+				"label": ""
+			},
+			{
+				"line": 767,
+				"column": 3,
+				"label": ""
+			}
+		]
+	}
+]

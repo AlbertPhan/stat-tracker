@@ -17,6 +17,13 @@ void HsvToRgb(const HsvColor *hsv, RgbColor *rgb)
         rgb->b = hsv->v;
         return;
     }
+    else if(hsv->v == 0)
+    {
+        rgb->r = 0;
+        rgb->g = 0;
+        rgb->b = 0;
+        return;
+    }
 
     region = hsv->h / 43;
     remainder = (hsv->h - (region * 43)) * 6; 
