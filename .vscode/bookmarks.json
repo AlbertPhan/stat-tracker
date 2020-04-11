@@ -3,23 +3,43 @@
 		"path": "$ROOTPATH$\\examples\\stat_tracker\\main.c",
 		"bookmarks": [
 			{
-				"line": 71,
+				"line": 65,
 				"column": 0,
 				"label": ""
 			},
 			{
-				"line": 87,
-				"column": 0,
-				"label": ""
-			},
-			{
-				"line": 178,
+				"line": 181,
 				"column": 21,
-				"label": "update_buttons()"
+				"label": ""
 			},
 			{
-				"line": 323,
-				"column": 7,
+				"line": 194,
+				"column": 0,
+				"label": ""
+			},
+			{
+				"line": 310,
+				"column": 0,
+				"label": ""
+			},
+			{
+				"line": 320,
+				"column": 0,
+				"label": ""
+			},
+			{
+				"line": 328,
+				"column": 0,
+				"label": ""
+			},
+			{
+				"line": 342,
+				"column": 108,
+				"label": ""
+			},
+			{
+				"line": 350,
+				"column": 0,
 				"label": ""
 			},
 			{
@@ -28,47 +48,67 @@
 				"label": ""
 			},
 			{
-				"line": 385,
+				"line": 408,
 				"column": 0,
 				"label": ""
 			},
 			{
-				"line": 484,
-				"column": 17,
+				"line": 438,
+				"column": 59,
 				"label": ""
 			},
 			{
-				"line": 510,
-				"column": 7,
+				"line": 513,
+				"column": 80,
 				"label": ""
 			},
 			{
-				"line": 546,
+				"line": 543,
+				"column": 0,
+				"label": ""
+			},
+			{
+				"line": 569,
 				"column": 1,
 				"label": ""
 			},
 			{
-				"line": 717,
+				"line": 783,
 				"column": 3,
 				"label": ""
 			},
 			{
-				"line": 724,
+				"line": 789,
 				"column": 3,
 				"label": ""
 			},
 			{
-				"line": 738,
-				"column": 65,
+				"line": 795,
+				"column": 3,
 				"label": ""
 			},
 			{
-				"line": 747,
-				"column": 70,
+				"line": 809,
+				"column": 13,
 				"label": ""
 			},
 			{
-				"line": 767,
+				"line": 818,
+				"column": 15,
+				"label": ""
+			},
+			{
+				"line": 836,
+				"column": 14,
+				"label": ""
+			},
+			{
+				"line": 853,
+				"column": 2,
+				"label": ""
+			},
+			{
+				"line": 869,
 				"column": 3,
 				"label": ""
 			}
