@@ -4,6 +4,7 @@ Manages buttons to increment points up and down
 
 TODO:
 [x] Fix main loop timing - main loop time intermittenly breaks and loops continously.
+[] create button library to be reused in other projects
 [] change retrigger to delay + repeat (need timer)
 [x] cdc usb serial - if needed for debugging
 [x] ADC
@@ -64,7 +65,6 @@ TODO:
 #define BATT_MAX_ADC 214 // ADC count for 4.2V/5V * 255
 
 // Timing defines
-#define LOOP_PERIOD_MS 10 // Main update loop timing
 #define BATTERY_FADE_PERIOD_MS 500 // Number of milliseconds for a period of fading from full to off
 #define CHARGED_TIMEOUT_MS (300*1000)	// Time while at constant voltage to be considered fully charged
 #define LOW_BATTERY_TIMEOUT_MS (10*1000)	// Time below critically low battery before icon flashes
@@ -78,8 +78,8 @@ TODO:
 #define DEFAULT_SATURATION 255
 #define BRIGHTNESS_MAX 255	// TESTING 255 - set to 60 afterwards
 #define BRIGHTNESS_STEP 5
-#define BRIGHTNESS_MIN 5
-#define BRIGHTNESS_CRITICALLY_LOW 10
+#define BRIGHTNESS_MIN 10
+#define BRIGHTNESS_CRITICALLY_LOW 15
 
 __xdata uint8_t brightness = DEFAULT_BRIGHTNESS; // default brightness
 __xdata uint8_t saturation = DEFAULT_SATURATION;	// default saturation
@@ -444,6 +444,7 @@ void update_battery_icon_led(const uint8_t batt_charge_adc)
 	//__xdata static const uint8_t steps = BATTERY_FADE_PERIOD_MS/LOOP_PERIOD_MS;	// remove steps if not needed
 	__xdata static uint8_t increments = BATTERY_FADE_PERIOD_MS/LOOP_PERIOD_MS;	// initially starts high
 	__xdata static uint8_t batt_charge_adc_flag = BATT_3V3_ADC + 1;	
+	__xdata static uint8_t batt_constantvoltage_flag = 0;
 
 	hsv_batt_icon.v = brightness;
 
@@ -455,16 +456,15 @@ void update_battery_icon_led(const uint8_t batt_charge_adc)
 				batt_charge_adc_flag = BATT_3V3_ADC + 1;	// Reset flag
 				flag_low_batt = 0;
 		}
-		// If charger is in constant voltage mode, start timer
-		if(batt_charge_adc >= BATT_MAX_ADC-1)	// -1 for some leeway
-		{
+		// If charger is in constant voltage mode, enable flag and start timing
+		if(batt_charge_adc >= BATT_MAX_ADC)
+			batt_constantvoltage_flag = 1;
+
+		if(batt_constantvoltage_flag)
 			batt_millis += LOOP_PERIOD_MS;	// increment charged time by LOOP_PERIOD_MS
-		}
-		else
-		{
+		else	// if not constant voltage
 			// reset timer
 			batt_millis = 0;
-		}
 
 		// if charging has NOT been in constant voltage mode for CHARGED_TIMEOUT_MS then fade batt icon
 		if(!(batt_millis >= CHARGED_TIMEOUT_MS))
@@ -475,6 +475,7 @@ void update_battery_icon_led(const uint8_t batt_charge_adc)
 	}
 	else // Not charging
 	{
+		batt_constantvoltage_flag = 0; // reset flag when not charging
 		if(batt_charge_adc < batt_charge_adc_flag)	// if batt critically low
 		{
 			batt_charge_adc_flag = batt_charge_adc;	// Only allow adc flag to go lower (To stop noisy adc from triggering fading states)
@@ -779,12 +780,6 @@ void main()
 				}
 			}
 
-			
-			
-			
-			
-
-
 			clear_display();
 			switch (state)
 			{
@@ -792,7 +787,9 @@ void main()
 				// fill bar based on battery charge for now while testing
 				hsv.h = hsv_health.h;
 				hsv.s = DEFAULT_SATURATION;
-				fill_bar(HP_BAR_START, EN_BAR_END, map8bit(battery_charge_adc,BATT_MIN_ADC,BATT_MAX_ADC,0,FULL_BAR_LENGTH*2), &hsv);
+				fill_bar(HP_BAR_START, HP_BAR_END, map8bit(battery_charge_adc,BATT_MIN_ADC,BATT_MAX_ADC,0,FULL_BAR_LENGTH*2), &hsv);
+				hsv.h = hsv_health.h + 10;
+				fill_bar_binary(EN_BAR_END,battery_charge_adc,8,&hsv);
 				break;
 			case RUNNING:	// Normal operating mode
 				// Draw bars
