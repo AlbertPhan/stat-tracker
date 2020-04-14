@@ -1,9 +1,11 @@
 /* timer.c
-    
+
 */
+
 #include <ch554.h>
 #include <debug.h>
 #include "timer.h"
+
 
 #define CPU_FREQ 16 // Mhz
 #define RELOAD_VALUE 56 // This gives 200 counts = 50us
