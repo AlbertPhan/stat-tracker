@@ -2,7 +2,6 @@
 
 */
 
-#include <ch554.h>
 #include <debug.h>
 #include "timer.h"
 

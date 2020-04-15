@@ -1,10 +1,8 @@
 
 
 #include <stdint.h>
-//#include <timer.h>	// why does including this timer.h file give errors
-#include <loop_period.h>
+#include <timer.h>
 #include "button.h"
-#include <usb-cdc.h>
 
 #define DEBOUNCE_TIME 20	// debounce time in ms
 #define HELD_TIME 300		// time before retriggering happens

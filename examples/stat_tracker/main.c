@@ -21,7 +21,7 @@ TODO:
 [] Use interrupts for touch buttons if needed to save some time during the update loop (about 4 ms)
 [x] Dim display when battery critically low
 [x] Add flag for critically low batt so it doesnt toggle the flashing state
-[] Fix battery icon to not fade after constant voltage charged
+[x] Fix battery icon to not fade after constant voltage charged
 */
 
 //#define USB_ENABLE
@@ -36,7 +36,6 @@ TODO:
 #include <touch.h>
 #include <button.h>
 #include <timer.h>
-#include <loop_period.h>
 
 
 #ifdef USB_ENABLE
@@ -67,8 +66,8 @@ TODO:
 
 // Timing defines
 #define BATTERY_FADE_PERIOD_MS 500 // Number of milliseconds for a period of fading from full to off
-#define CHARGED_TIMEOUT_MS (60*1000)	// Time while at constant voltage to be considered fully charged
-#define LOW_BATTERY_TIMEOUT_MS (10*1000)	// Time below critically low battery before icon flashes
+#define CHARGED_TIMEOUT_MS 300000	// Time while at constant voltage to be considered fully charged
+#define LOW_BATTERY_TIMEOUT_MS 10000	// Time below critically low battery before icon flashes
 #define RETRIGGER_PERIOD 200
 #define RETRIGGER_DELAY 500 	// Time button held down before
 
@@ -460,7 +459,7 @@ void update_battery_icon_led(const uint8_t batt_charge_adc)
 			batt_millis = 0;
 
 		// if charging has NOT been in constant voltage mode for CHARGED_TIMEOUT_MS then fade batt icon
-		if(!(batt_millis >= CHARGED_TIMEOUT_MS))
+		if(batt_millis < CHARGED_TIMEOUT_MS)
 		{
 			// fade charging icon - TODO: add code to start animation when charging begins
 			hsv_batt_icon.v = fade_brightness(brightness,&fade_charging);
@@ -483,7 +482,6 @@ void update_battery_icon_led(const uint8_t batt_charge_adc)
 			hsv_batt_icon.v = fade_brightness(brightness, &fade_criticallylowbatt);
 		}
 	}
-	
 	// Show battery charge from red to green
 	hsv_batt_icon.h = map(batt_charge_adc,BATT_MIN_ADC,BATT_MAX_ADC,RED_HUE,GREEN_HUE);
 	set_led(PWR_LED, &hsv_batt_icon);
