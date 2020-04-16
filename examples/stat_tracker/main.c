@@ -22,6 +22,7 @@ TODO:
 [x] Dim display when battery critically low
 [x] Add flag for critically low batt so it doesnt toggle the flashing state
 [x] Fix battery icon to not fade after constant voltage charged
+[] Add tkey to button stuff so it can retrigger
 */
 
 //#define USB_ENABLE
@@ -157,13 +158,6 @@ __xdata fade fade_charging = {0,0,BATTERY_FADE_PERIOD_MS};
 __xdata fade fade_criticallylowbatt = {0,0,BATTERY_FADE_PERIOD_MS/2};
 
 
-typedef struct touchkey
-{
-	uint16_t NOKEY;		// data when no keypressed
-	uint16_t DATA;		// current touch data value
-	uint8_t PREV;		// previous state 
-	uint8_t STATE;		// button STATE
-} touchkey;
 
 // button structs
 __xdata button btn_hp_p = {0,0,0};
@@ -188,12 +182,7 @@ void DeviceInterrupt(void) __interrupt(INT_NO_USB) {
 #endif
 
 void update_buttons()
-{
-	
-	// Clear tkey states in case they were active previously
-	tkey_brightup.STATE = 0;
-	tkey_brightdown.STATE = 0;
-	
+{	
 	MUL_P = 0;	// Drive MUL_P low to sense + buttons
 	MUL_N = 1;	// Open MUL_N to let it float
 	mDelayuS(5); // Give time to switch pins
@@ -202,33 +191,6 @@ void update_buttons()
 	update_button(&btn_hp_p,!HP_BTN);
 	update_button(&btn_en_p,!EN_BTN);
 	update_button(&btn_dash_p,!DASH_BTN);
-	// if (btn_hp_p.PREV == 1 && HP_BTN == 0)
-	// 	btn_hp_p.STATE = ACTIVATED;
-	
-	// if (btn_en_p.PREV == 1 && EN_BTN == 0)
-	// 	btn_en_p.STATE = ACTIVATED;
-	
-	// if (btn_dash_p.PREV == 1 && DASH_BTN == 0)
-	// 	btn_dash_p.STATE = ACTIVATED;
-	
-	// // Current states become previous states for next time
-	// btn_hp_p.PREV = HP_BTN;
-	// btn_en_p.PREV = EN_BTN;
-	// btn_dash_p.PREV = DASH_BTN;
-
-	// // If button is ON then increment ON once to represent 1 Loop period
-	// if(!btn_hp_p)
-	// 	btn_hp_p.ON++;
-	// else
-	// 	btn_hp_p.ON = 0;
-	// if(!btn_en_p)
-	// 	btn_en_p.ON++;
-	// else
-	// 	btn_en_p.ON = 0;
-	// if(!btn_dash_p)
-	// 	btn_dash_p.ON++;
-	// else
-	// 	btn_dash_p.ON = 0;
 
 	MUL_P = 1;	// Open MUL_P to let it float	
 	MUL_N = 0;	// Drive MUL_N low to sense - buttons
@@ -239,67 +201,13 @@ void update_buttons()
 	update_button(&btn_en_n,!EN_BTN);
 	update_button(&btn_dash_n,!DASH_BTN);
 	
-	// // Check - buttons
-	// if (btn_hp_n.PREV == 1 && HP_BTN == 0)
-	// 	btn_hp_n.STATE = ACTIVATED;
-	
-	// if (btn_en_n.PREV == 1 && EN_BTN == 0)
-	// 	btn_en_n.STATE = ACTIVATED;	
-	
-	// if (btn_dash_n.PREV == 1 && DASH_BTN == 0)
-	// 	btn_dash_n.STATE = ACTIVATED;
-
-	
-	// // Current states become previous states for next time
-	// btn_hp_n.PREV = HP_BTN;
-	// btn_en_n.PREV = EN_BTN;
-	// btn_dash_n.PREV = DASH_BTN;
-
-	// // If button is ON then increment ON once to represent 1 Loop period
-	// if(!btn_hp_n)
-	// 	btn_hp_n.ON++;
-	// else
-	// 	btn_hp_n.ON = 0;
-	// if(!btn_en_n)
-	// 	btn_en_n.ON++;
-	// else
-	// 	btn_en_n.ON = 0;
-	// if(!btn_dash_n)
-	// 	btn_dash_n.ON++;
-	// else
-	// 	btn_dash_n.ON = 0;
-	
 	MUL_N = 1; 	// float MUL_N now that we're done checking buttons
-
-
-	// // Retrigger button if held down longer than RETRIGGER_DELAY
-
-	// // if button was held for longer than RETRIGGER_DELAY
-	// // TODO: figure out way to track retrigger_period
-	// if(btn_hp_p.ON > RETRIGGER_DELAY/LOOP_PERIOD_MS)
-	// 	btn_hp_p.STATE = ACTIVATED;
 	
-	// Touchkeys
-
-	// Start brightness up tkey query
-	tkey_brightup.DATA = getTouchKeyData(BRIGHTNESS_UP_TOUCHKEY_NUM);
-	// Data is inversely proportional to the capacitance. When touch button is pressed data is smaller than when not pressed.
-
-	// Compare data to when key was no pressed
-	if(tkey_brightup.PREV == 0 && tkey_brightup.DATA < tkey_brightup.NOKEY-TOUCH_HYSTERESIS) // button is pressed
-	{
-		tkey_brightup.STATE = ACTIVATED;
-	}
-	// Current state becomes previous state
-	tkey_brightup.PREV = tkey_brightup.DATA < tkey_brightup.NOKEY -TOUCH_HYSTERESIS;
-
-	// Start brightness down tkey query
-	tkey_brightdown.DATA = getTouchKeyData(BRIGHTNESS_DOWN_TOUCHKEY_NUM);
-	if(tkey_brightdown.PREV == 0 && tkey_brightdown.DATA < tkey_brightdown.NOKEY-TOUCH_HYSTERESIS) // button is pressed
-	{
-		tkey_brightdown.STATE = ACTIVATED;
-	}
-	tkey_brightdown.PREV = tkey_brightdown.DATA < tkey_brightdown.NOKEY -TOUCH_HYSTERESIS;
+	// Update touchkeys
+	
+	update_tkey(&tkey_brightup, getTouchKeyData(BRIGHTNESS_UP_TOUCHKEY_NUM));
+	update_tkey(&tkey_brightdown, getTouchKeyData(BRIGHTNESS_DOWN_TOUCHKEY_NUM));
+	
 
 }
 
@@ -504,14 +412,6 @@ void main()
 	__xdata uint8_t battery_adc_buffer[AVERAGING_SIZE];
 	__xdata HsvColor hsv = {0,DEFAULT_SATURATION,DEFAULT_BRIGHTNESS};	// General Purpose hsv
 	__xdata uint8_t errorFlag = 0;	// TESTING 
-	
-	// Init tkey states
-	tkey_brightup.STATE = 0;
-	tkey_brightdown.STATE = 0;
-	tkey_brightup.PREV = 0;		// active high
-	tkey_brightdown.PREV = 0;	
-
-
 
 	CfgFsys();
 	bitbangSetup(); // ws2812 pin is setup here
@@ -568,8 +468,8 @@ void main()
 	// Touch key setup 
 	touchKeyQueryCyl2ms();	// set period selection
 	// Get no touchkey pressed data
-	tkey_brightup.NOKEY = getNokeyData(BRIGHTNESS_UP_TOUCHKEY_NUM);	// set no key threshold
-	tkey_brightdown.NOKEY = getNokeyData(BRIGHTNESS_DOWN_TOUCHKEY_NUM);	// set no key threshold
+	tkey_brightup.nokey = getNokeyData(BRIGHTNESS_UP_TOUCHKEY_NUM);	// set no key threshold
+	tkey_brightdown.nokey = getNokeyData(BRIGHTNESS_DOWN_TOUCHKEY_NUM);	// set no key threshold
 
 	// Initialize the adc buffer array with AVERAGING_SIZE good samples
 	for(i = 0; i< AVERAGING_SIZE; i++)
@@ -648,7 +548,7 @@ void main()
 
 			// Do other button stuff related to buttons at the same time
 			// Brightness control
-			if(tkey_brightup.STATE == ACTIVATED && !flag_low_batt)
+			if(retrigger_tkey(&tkey_brightup) && !flag_low_batt)
 			{
 			// Increment value if <= BRIGHTNESS_MAX - BRIGHTNESS_STEP and not low battery
 				if (brightness <= BRIGHTNESS_MAX - BRIGHTNESS_STEP)
@@ -656,7 +556,7 @@ void main()
 					brightness += BRIGHTNESS_STEP;
 				}
 			}
-			if(tkey_brightdown.STATE == ACTIVATED && !flag_low_batt)
+			if(retrigger_tkey(&tkey_brightdown) && !flag_low_batt)
 			{
 				// Decrement value if >= 0 + BRIGHTNESS_STEP and not low battery
 				if( brightness > BRIGHTNESS_STEP)
@@ -664,7 +564,7 @@ void main()
 					brightness -= BRIGHTNESS_STEP;
 				}
 			}
-			if(tkey_brightup.DATA < tkey_brightup.NOKEY - TOUCH_HYSTERESIS && tkey_brightdown.DATA < tkey_brightdown.NOKEY - TOUCH_HYSTERESIS)
+			if(held_tkey(&tkey_brightup) && held_tkey(&tkey_brightdown))
 			{// TESTING - goes to boot loader when both tkey buttons pressed
 				// Turn off WS2812's before starting bootloader
 				for (i = 0; i < LED_COUNT*3; i++)
@@ -796,35 +696,35 @@ void main()
 				break;
 			case TOUCHKEY1: // Debug data for TIN1 BRIGHTNESS_DOWN_TOUCHKEY_NUM
 				// Display nokey data
-				fill_bar_binary(HP_BAR_END,tkey_brightdown.NOKEY,16,&hsv_health);
+				fill_bar_binary(HP_BAR_END,tkey_brightdown.nokey,16,&hsv_health);
 				// Display capacitance data
-				fill_bar_binary(EN_BAR_END,tkey_brightdown.DATA,16,&hsv_energy);
+				fill_bar_binary(EN_BAR_END,tkey_brightdown.data,16,&hsv_energy);
 
 				set_led(DASH_BAR_START, &hsv_dash);
 
 				// Turn on dash leds if touch data is less than nokey threshold
-				if(tkey_brightdown.DATA < tkey_brightdown.NOKEY - TOUCH_HYSTERESIS)
+				if(read_tkey(&tkey_brightdown))
 				{
 					set_led(DASH_BAR_END-1, &hsv_health);
 				}
-				if(tkey_brightup.DATA < tkey_brightup.NOKEY - TOUCH_HYSTERESIS)
+				if(read_tkey(&tkey_brightup))
 				{
 					set_led(DASH_BAR_END, &hsv_health);
 				}
 				break;
 			case TOUCHKEY2:	// Debug data for TIN2 BRIGHTNESS_UP_TOUCHKEY_NUM
 				// Display capacitance data values on hp and en bars
-				fill_bar_binary(HP_BAR_END,tkey_brightup.NOKEY,16,&hsv_health);
+				fill_bar_binary(HP_BAR_END,tkey_brightup.nokey,16,&hsv_health);
 				// Display capacitance data
-				fill_bar_binary(EN_BAR_END,tkey_brightup.DATA,16,&hsv_energy);
+				fill_bar_binary(EN_BAR_END,tkey_brightup.data,16,&hsv_energy);
 				fill_bar(DASH_BAR_START,DASH_BAR_START + 1,2, &hsv_dash);	// turn on 2 dash leds to show state
 
 				// Turn on dash leds if touch data is less than nokey threshold
-				if(tkey_brightdown.DATA < tkey_brightdown.NOKEY - TOUCH_HYSTERESIS)
+				if(tkey_brightdown.data < tkey_brightdown.nokey - TOUCH_HYSTERESIS)
 				{
 					set_led(DASH_BAR_END-1, &hsv_health);
 				}
-				if(tkey_brightup.DATA < tkey_brightup.NOKEY - TOUCH_HYSTERESIS)
+				if(tkey_brightup.data < tkey_brightup.nokey - TOUCH_HYSTERESIS)
 				{
 					set_led(DASH_BAR_END, &hsv_health);
 				}
