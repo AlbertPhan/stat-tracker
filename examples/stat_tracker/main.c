@@ -22,7 +22,7 @@ TODO:
 [x] Dim display when battery critically low
 [x] Add flag for critically low batt so it doesnt toggle the flashing state
 [x] Fix battery icon to not fade after constant voltage charged
-[] Add tkey to button stuff so it can retrigger
+[x] Add tkey to button stuff so it can retrigger
 */
 
 //#define USB_ENABLE
@@ -168,8 +168,8 @@ __xdata button btn_dash_p = {0,0,0};
 __xdata button btn_dash_n = {0,0,0};
 
 
-__xdata touchkey tkey_brightup = {0,0,0,0};
-__xdata touchkey tkey_brightdown = {0,0,0,0};
+__xdata touchkey tkey_brightup = {0,0,0,0,0};
+__xdata touchkey tkey_brightdown = {0,0,0,0,0};
 
 // Flags
 __xdata uint8_t flag_low_batt = 0;
@@ -548,7 +548,7 @@ void main()
 
 			// Do other button stuff related to buttons at the same time
 			// Brightness control
-			if(retrigger_tkey(&tkey_brightup) && !flag_low_batt)
+			if(retrigger_tkey(&tkey_brightup) && !flag_low_batt && !(state == BUTTON))
 			{
 			// Increment value if <= BRIGHTNESS_MAX - BRIGHTNESS_STEP and not low battery
 				if (brightness <= BRIGHTNESS_MAX - BRIGHTNESS_STEP)
@@ -556,7 +556,7 @@ void main()
 					brightness += BRIGHTNESS_STEP;
 				}
 			}
-			if(retrigger_tkey(&tkey_brightdown) && !flag_low_batt)
+			if(retrigger_tkey(&tkey_brightdown) && !flag_low_batt &&  !(state == BUTTON))
 			{
 				// Decrement value if >= 0 + BRIGHTNESS_STEP and not low battery
 				if( brightness > BRIGHTNESS_STEP)
@@ -751,13 +751,23 @@ void main()
 				fill_bar_binary(EN_BAR_END,current_millis,20,&hsv_dash_alt);	// TESTING
 				break;
 			case BUTTON:
-				fill_bar_binary(HP_BAR_END,btn_dash_p.prev_loops,20,&hsv_dash);
-				fill_bar_binary(EN_BAR_END,btn_dash_p.state,8,&hsv_dash);
-				if(retrigger(&btn_dash_n))
+				if(read_tkey(&tkey_brightup))
+				{
+					fill_bar_binary(HP_BAR_END,tkey_brightup.time_loops,20,&hsv_dash);
+				fill_bar_binary(EN_BAR_END,tkey_brightup.state,8,&hsv_dash);
+				}
+				else if(read_tkey(&tkey_brightdown))
+				{
+					fill_bar_binary(HP_BAR_END,tkey_brightdown.time_loops,20,&hsv_dash);
+				fill_bar_binary(EN_BAR_END,tkey_brightdown.state,8,&hsv_dash);
+				}
+				
+
+				if(retrigger_tkey(&tkey_brightdown))
 					set_led(DASH_BAR_END-1,&hsv_dash);
 				else
 					set_led_off(DASH_BAR_END-1);
-				if(retrigger(&btn_dash_p))
+				if(retrigger_tkey(&tkey_brightup))
 					set_led(DASH_BAR_END,&hsv_dash);
 				else
 					set_led_off(DASH_BAR_END);

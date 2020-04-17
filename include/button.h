@@ -22,7 +22,8 @@ typedef struct touchkey
 	uint16_t data;		// current touch data value
 	uint8_t state;		// Tkey states
 	uint32_t prev_loops;	// like prev_millis but in terms of main loop periods
-	uint32_t time_loops;	// used to track retrigger and held time
+	uint32_t time_loops;	// used to track held time
+	uint32_t retrigger_loops; // used to track retrigger time
 } touchkey;
 
 
@@ -40,6 +41,8 @@ uint8_t deactivated_tkey(touchkey * tkey);
 uint8_t read_tkey(touchkey * tkey);
 uint8_t retrigger_tkey(touchkey * tkey);
 uint8_t held_tkey(touchkey * tkey);
+uint8_t long_held_tkey(touchkey * tkey);
 uint8_t read_tkey(touchkey * tkey);
+
 
 
