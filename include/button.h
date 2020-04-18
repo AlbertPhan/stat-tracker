@@ -11,8 +11,8 @@
 typedef struct button
 {
 	uint8_t state;			// Button state
-	uint32_t prev_loops;	// like prev_millis but in terms of main loop periods
-	uint32_t time_loops;	// used to track retrigger and held time
+	uint16_t prev_loops;	// like prev_millis but in terms of main loop periods
+	uint16_t time_loops;	// used to track retrigger and held time
 	
 } button;
 
@@ -21,9 +21,9 @@ typedef struct touchkey
 	uint16_t nokey;		// data when no keypressed
 	uint16_t data;		// current touch data value
 	uint8_t state;		// Tkey states
-	uint32_t prev_loops;	// like prev_millis but in terms of main loop periods
-	uint32_t time_loops;	// used to track held time
-	uint32_t retrigger_loops; // used to track retrigger time
+	uint16_t prev_loops;	// like prev_millis but in terms of main loop periods
+	uint16_t time_loops;	// used to track held time
+	uint16_t retrigger_loops; // used to track retrigger time
 } touchkey;
 
 

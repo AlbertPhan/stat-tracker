@@ -13,3 +13,9 @@
 .travis.yml
 .vscode/settings.json
 examples/.vscode/tasks.json
+examples/stat_tracker/stat_tracker.code-workspace
+.vscode/bookmarks.json
+.vscode/bookmarks.json
+examples/sleep/main.c
+examples/sleep/Makefile
+examples/stat_tracker/stat_tracker.code-workspace

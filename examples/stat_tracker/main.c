@@ -753,24 +753,77 @@ void main()
 			case BUTTON:
 				if(read_tkey(&tkey_brightup))
 				{
-					fill_bar_binary(HP_BAR_END,tkey_brightup.time_loops,20,&hsv_dash);
-				fill_bar_binary(EN_BAR_END,tkey_brightup.state,8,&hsv_dash);
+					fill_bar_binary(HP_BAR_END,tkey_brightup.time_loops,16,&hsv_dash);
+					fill_bar_binary(EN_BAR_END,tkey_brightup.state,8,&hsv_dash);
+					if(retrigger_tkey(&tkey_brightup))
+						set_led(DASH_BAR_END,&hsv_dash);
+					else
+						set_led_off(DASH_BAR_END);
 				}
 				else if(read_tkey(&tkey_brightdown))
 				{
-					fill_bar_binary(HP_BAR_END,tkey_brightdown.time_loops,20,&hsv_dash);
-				fill_bar_binary(EN_BAR_END,tkey_brightdown.state,8,&hsv_dash);
+					fill_bar_binary(HP_BAR_END,tkey_brightdown.time_loops,16,&hsv_dash);
+					fill_bar_binary(EN_BAR_END,tkey_brightdown.state,8,&hsv_dash);
+					if(retrigger_tkey(&tkey_brightdown))
+						set_led(DASH_BAR_END,&hsv_dash);
+					else
+						set_led_off(DASH_BAR_END);
 				}
-				
+				else if(read(&btn_hp_p))
+				{
+					fill_bar_binary(HP_BAR_END,btn_hp_p.time_loops,16,&hsv_dash);
+					fill_bar_binary(EN_BAR_END,btn_hp_p.state,8,&hsv_dash);
+					if(retrigger(&btn_hp_p))
+						set_led(DASH_BAR_END,&hsv_dash);
+					else
+						set_led_off(DASH_BAR_END);
+				}
+				else if(read(&btn_hp_n))
+				{
+					fill_bar_binary(HP_BAR_END,btn_hp_n.time_loops,16,&hsv_dash);
+					fill_bar_binary(EN_BAR_END,btn_hp_n.state,8,&hsv_dash);
+					if(retrigger(&btn_hp_n))
+						set_led(DASH_BAR_END,&hsv_dash);
+					else
+						set_led_off(DASH_BAR_END);
+				}
+				else if(read(&btn_en_p))
+				{
+					fill_bar_binary(HP_BAR_END,btn_en_p.time_loops,16,&hsv_dash);
+					fill_bar_binary(EN_BAR_END,btn_en_p.state,8,&hsv_dash);
+					if(retrigger(&btn_en_p))
+						set_led(DASH_BAR_END,&hsv_dash);
+					else
+						set_led_off(DASH_BAR_END);
+				}
+				else if(read(&btn_en_n))
+				{
+					fill_bar_binary(HP_BAR_END,btn_en_n.time_loops,16,&hsv_dash);
+					fill_bar_binary(EN_BAR_END,btn_en_n.state,8,&hsv_dash);
+					if(retrigger(&btn_en_n))
+						set_led(DASH_BAR_END,&hsv_dash);
+					else
+						set_led_off(DASH_BAR_END);
+				}
+				else if(read(&btn_dash_p))
+				{
+					fill_bar_binary(HP_BAR_END,btn_dash_p.time_loops,16,&hsv_dash);
+					fill_bar_binary(EN_BAR_END,btn_dash_p.state,8,&hsv_dash);
+					if(retrigger(&btn_dash_p))
+						set_led(DASH_BAR_END,&hsv_dash);
+					else
+						set_led_off(DASH_BAR_END);
+				}
+				else if(read(&btn_dash_n))
+				{
+					fill_bar_binary(HP_BAR_END,btn_dash_n.time_loops,16,&hsv_dash);
+					fill_bar_binary(EN_BAR_END,btn_dash_n.state,8,&hsv_dash);
+					if(retrigger(&btn_dash_n))
+						set_led(DASH_BAR_END,&hsv_dash);
+					else
+						set_led_off(DASH_BAR_END);
+				}
 
-				if(retrigger_tkey(&tkey_brightdown))
-					set_led(DASH_BAR_END-1,&hsv_dash);
-				else
-					set_led_off(DASH_BAR_END-1);
-				if(retrigger_tkey(&tkey_brightup))
-					set_led(DASH_BAR_END,&hsv_dash);
-				else
-					set_led_off(DASH_BAR_END);
 				break;
 			default:
 				break;

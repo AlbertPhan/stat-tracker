@@ -31,7 +31,7 @@
 void update_button(button * btn, uint8_t current_button_state)
 {
 	// update the button
-	uint32_t current_btn_millis = millis();
+	uint16_t current_btn_millis = millis();
 	// Update the debounced state and if state changed 
 	// Reset states if previously changed
 	btn->state &= ~STATE_CHANGED;
@@ -106,7 +106,7 @@ void update_button(button * btn, uint8_t current_button_state)
 void update_tkey(touchkey *tkey, uint16_t current_tkey_data)
 {
 	// Update the button
-	uint32_t current_tkey_millis = millis();
+	uint16_t current_tkey_millis = millis();	// truncate millis to 16 bit, we dont need to track long times
 	// Update the debounced state and if state changed 
 	// Reset states if previously changed
 	tkey->data = current_tkey_data;
