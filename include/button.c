@@ -110,6 +110,11 @@ void update_tkey(touchkey *tkey, uint16_t current_tkey_data)
 	// Update the debounced state and if state changed 
 	// Reset states if previously changed
 	tkey->data = current_tkey_data;
+
+	if(tkey->time_loops == 0)	// reset held long on state
+	{
+		tkey->state &= ~STATE_LONG_HELD_ON;
+	}
 	tkey->state &= ~STATE_CHANGED;
 	tkey->state &= ~STATE_ACTIVATED;
 	tkey->state &= ~STATE_DEACTIVATED;
@@ -159,13 +164,14 @@ void update_tkey(touchkey *tkey, uint16_t current_tkey_data)
 		tkey->state |= STATE_HELD_ON;
 		tkey->retrigger_loops = 0;
 	}
+
 	// if button is on and held for more than LONG_HELD_TIME
 	if((tkey->state & DEBOUNCED_STATE) && tkey->time_loops *LOOP_PERIOD_MS >= LONG_HELD_TIME)
 	{
 		tkey->state |= STATE_LONG_HELD_ON;
 	}
-	// if button state hasnt changed and is still on, increment time_loops
-	if (!(tkey->state & STATE_CHANGED) && tkey->state & DEBOUNCED_STATE)
+	// else if button state hasnt changed and is still on, increment time_loops
+	else if (!(tkey->state & STATE_CHANGED) && tkey->state & DEBOUNCED_STATE)
 	{
 		tkey->time_loops++;
 	}
@@ -176,16 +182,22 @@ void update_tkey(touchkey *tkey, uint16_t current_tkey_data)
 	{
 		// reset time_loops and other states
 		tkey->time_loops = 0;
-		tkey->state &= ~STATE_HELD_ON;
-		tkey->state &= ~STATE_LONG_HELD_ON;
+		tkey->state &= ~STATE_HELD_ON;	
 		// tkey on?
 		if(tkey->data < tkey->nokey - TOUCH_HYSTERESIS)
 			{
+				
 				tkey->state |= STATE_ACTIVATED;
 				tkey->state |= STATE_RETRIGGER; // activates for initial press
 			}
-		else
+		else	// tkey off
+			{
+			if(tkey->state & STATE_LONG_HELD_ON) // if previously held long
+			{
+				tkey->state |= STATE_LONG_HELD_ON;	// Leave state long held on for one cycle to so it can be checked that it was held on and then deactivated
+			}
 			tkey->state |= STATE_DEACTIVATED;
+			}
 	}
 	
 }
