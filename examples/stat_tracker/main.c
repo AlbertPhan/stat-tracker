@@ -16,7 +16,7 @@ TODO:
 [] Add color configuration states using multi button presses
 [] Fix led showing garbage data on power on
 [x] Fix battery icon showing wrong hue - ADC related? ADC and touch inputs were damaged from ESD. Series protection resitors were added
-[] Add eeprom code to remember health states
+[] Add eeprom code to remember colour config
 [x] Fix fill_bar_binary not working past 16 bits
 [] Use interrupts for touch buttons if needed to save some time during the update loop (about 4 ms)
 [x] Dim display when battery critically low
@@ -37,6 +37,7 @@ TODO:
 #include <touch.h>
 #include <button.h>
 #include <timer.h>
+#include <eeprom.h>
 
 
 #ifdef USB_ENABLE
@@ -81,21 +82,38 @@ TODO:
 #define BRIGHTNESS_STEP 5
 #define BRIGHTNESS_MIN 10
 #define BRIGHTNESS_CRITICALLY_LOW 15
+#define DEFAULT_HEALTH_HUE 110
+#define DEFAULT_HEALTH_ALT_HUE 167
+#define DEFAULT_ENERGY_HUE 235
+#define DEFAULT_ENERGY_ALT_HUE 35
+#define DEFAULT_DASH_HUE 185
+#define DEFAULT_DASH_ALT_HUE 210
 
 __xdata uint8_t brightness = DEFAULT_BRIGHTNESS; // default brightness
 __xdata uint8_t saturation = DEFAULT_SATURATION;	// default saturation
 
 // Colors {H,S,V} HSV values go from 0 to 255
-__xdata HsvColor hsv_health = {110,DEFAULT_SATURATION,DEFAULT_BRIGHTNESS};
-__xdata HsvColor hsv_health_alt = {167,DEFAULT_SATURATION,DEFAULT_BRIGHTNESS};
-__xdata HsvColor hsv_energy = {235,DEFAULT_SATURATION,DEFAULT_BRIGHTNESS}; 
-__xdata HsvColor hsv_energy_alt = {35,DEFAULT_SATURATION,DEFAULT_BRIGHTNESS};
-__xdata HsvColor hsv_dash = {185,DEFAULT_SATURATION,DEFAULT_BRIGHTNESS};
-__xdata HsvColor hsv_dash_alt = {210,DEFAULT_SATURATION,DEFAULT_BRIGHTNESS};
+__xdata HsvColor hsv_health = {DEFAULT_HEALTH_HUE,DEFAULT_SATURATION,DEFAULT_BRIGHTNESS};
+__xdata HsvColor hsv_health_alt = {DEFAULT_HEALTH_ALT_HUE,DEFAULT_SATURATION,DEFAULT_BRIGHTNESS};
+__xdata HsvColor hsv_energy = {DEFAULT_ENERGY_HUE,DEFAULT_SATURATION,DEFAULT_BRIGHTNESS}; 
+__xdata HsvColor hsv_energy_alt = {DEFAULT_ENERGY_ALT_HUE,DEFAULT_SATURATION,DEFAULT_BRIGHTNESS};
+__xdata HsvColor hsv_dash = {DEFAULT_DASH_HUE,DEFAULT_SATURATION,DEFAULT_BRIGHTNESS};
+__xdata HsvColor hsv_dash_alt = {DEFAULT_DASH_ALT_HUE,DEFAULT_SATURATION,DEFAULT_BRIGHTNESS};
 __xdata HsvColor hsv_charged = {GREEN_HUE,DEFAULT_SATURATION, DEFAULT_BRIGHTNESS};
 __xdata HsvColor hsv_charging = {30, DEFAULT_SATURATION,DEFAULT_BRIGHTNESS};
 __xdata HsvColor hsv_boot = {160,180,DEFAULT_BRIGHTNESS};
 __xdata HsvColor hsv_off = {0,0,0};
+
+// "EEPROM" data flash
+#define EEPROM_BUFFER_LEN 9
+#define INIT_FLASH_BYTE 0x55
+#define EEPROM_READ_SUCCESS_INITIALIZED 1
+#define EEPROM_READ_SUCCESS_NO_INIT (1<<1)
+#define EEPROM_WRITE_SUCCESS (1<<2)
+#define EEPROM_WRITE_FAIL (1<<3)
+uint8_t eeprom_buffer[EEPROM_BUFFER_LEN];
+enum address {INIT_BYTE_ADDR,HP_ADDR,HP_ALT_ADDR,EN_ADDR,EN_ALT_ADDR,DASH_ADDR,DASH_ALT_ADDR,BATT_CHARGED_ADDR,BATT_LOW_ADDR};
+uint8_t eeprom_flag = 0;
 
 
 
@@ -126,23 +144,19 @@ SBIT(DASH_BTN, PORT3, PIN_DASH_BTN);
 #define BRIGHTNESS_UP_TOUCHKEY_NUM 2 // Touch key number 
 #define BRIGHTNESS_DOWN_TOUCHKEY_NUM 1 // Touch key number
 
-// Button States
-#define NOTACTIVATED 0
-#define ACTIVATED 1
-#define DEACTIVATED 2
-
 #define LED_COUNT (46)
 
 // States
-#define MAX_STATES 8
+#define MAX_STATES 9
 #define BATTERY 1	//
 #define RUNNING 2	//
-#define COLOR_PALLETTE 3 		//
+#define COLOR_PALLETTE 3 //
 #define TOUCHKEY1 4 //
 #define TOUCHKEY2 5 // 
 #define TIMER 6 
 #define LOOP 7
 #define BUTTON 8
+#define CONFIG 9
 
 __xdata uint8_t led_data[LED_COUNT*3];
 
@@ -390,10 +404,33 @@ void update_battery_icon_led(const uint8_t batt_charge_adc)
 			hsv_batt_icon.v = fade_brightness(brightness, &fade_criticallylowbatt);
 		}
 	}
-	// Show battery charge from red to green
-	hsv_batt_icon.h = map(batt_charge_adc,BATT_MIN_ADC,BATT_MAX_ADC,RED_HUE,GREEN_HUE);
+	// Show battery charge from fully charged colour to low colour
+	hsv_batt_icon.h = map(batt_charge_adc,BATT_MIN_ADC,BATT_MAX_ADC,eeprom_buffer[BATT_LOW_ADDR],eeprom_buffer[BATT_CHARGED_ADDR]);
 	set_led(PWR_LED, &hsv_batt_icon);
 }
+
+// Writes initial data to eeprom flash
+// returns # bytes written
+uint8_t eeprom_write_defaults()
+{
+	uint8_t bytes_written;
+	eeprom_buffer[INIT_BYTE_ADDR] = INIT_FLASH_BYTE;
+	eeprom_buffer[HP_ADDR] = DEFAULT_HEALTH_HUE;
+	eeprom_buffer[HP_ALT_ADDR] = DEFAULT_HEALTH_ALT_HUE;
+	eeprom_buffer[EN_ADDR] = DEFAULT_ENERGY_HUE;
+	eeprom_buffer[EN_ALT_ADDR] = DEFAULT_ENERGY_ALT_HUE;
+	eeprom_buffer[DASH_ADDR] = DEFAULT_DASH_HUE; 
+	eeprom_buffer[DASH_ALT_ADDR] = DEFAULT_DASH_ALT_HUE;
+	eeprom_buffer[BATT_LOW_ADDR] = RED_HUE;
+	eeprom_buffer[BATT_CHARGED_ADDR] = GREEN_HUE;
+	bytes_written = WriteDataFlash(INIT_BYTE_ADDR,eeprom_buffer, EEPROM_BUFFER_LEN);
+	if(bytes_written == EEPROM_BUFFER_LEN)
+		eeprom_flag = EEPROM_WRITE_SUCCESS;	// write success // remove?
+	else
+		eeprom_flag = EEPROM_WRITE_FAIL; // failed write
+	return bytes_written;
+}
+
 
 
 void main() 
@@ -481,6 +518,37 @@ void main()
 	EA = 0; // disable global interrupts
 	prev_millis = millis(); // set before going into loop
 	EA = 1;	// enable global interrupts
+
+	// EEPROM setup
+	// Read flash
+	if(ReadDataFlash(INIT_BYTE_ADDR,EEPROM_BUFFER_LEN,eeprom_buffer) == EEPROM_BUFFER_LEN) // if read successfully 
+	{
+		if(eeprom_buffer[INIT_BYTE_ADDR] == 0x55)	// if it has been initilizated then use the data
+		{
+			hsv_health.h = eeprom_buffer[HP_ADDR];
+			hsv_health_alt.h = eeprom_buffer[HP_ALT_ADDR];
+			hsv_energy.h = eeprom_buffer[EN_ADDR]; 
+			hsv_energy_alt.h = eeprom_buffer[EN_ALT_ADDR];
+			hsv_dash.h = eeprom_buffer[DASH_ADDR];
+			hsv_dash_alt.h = eeprom_buffer[DASH_ALT_ADDR];
+			// batt icon data in buffer too
+			eeprom_flag = EEPROM_READ_SUCCESS_INITIALIZED; // testing eeprom initilized
+		}
+		else 
+		{
+			eeprom_flag = EEPROM_READ_SUCCESS_NO_INIT; // testing read eeprom success but not initilized
+			eeprom_write_defaults();
+		}
+	}
+	else
+	{
+		// if not read successfully then colours will be set to default(already done above) and write to the flash if possible
+		eeprom_write_defaults();
+	}
+	
+	
+
+
 	// Main loop ************************************************************
     while (1) 
 	{
@@ -760,7 +828,7 @@ void main()
 					else
 						set_led_off(DASH_BAR_END);
 				}
-				else if(read_tkey(&tkey_brightdown))
+				else if(read_tkey(&tkey_brightdown))// testing 1 on
 				{
 					fill_bar_binary(HP_BAR_END,tkey_brightdown.time_loops,16,&hsv_dash);
 					fill_bar_binary(EN_BAR_END,tkey_brightdown.state,8,&hsv_dash);
@@ -824,6 +892,20 @@ void main()
 						set_led_off(DASH_BAR_END);
 				}
 
+				break;
+			case CONFIG:
+				fill_bar_binary(DASH_BAR_END,eeprom_flag,5,&hsv_health);	// testing
+				// add button code to go into this state when both brightness buttons are long held
+
+				// Show the current colour pallete
+
+				// up and down adjust colour pallete
+
+				// dash + and - move which colour to be edited (flashing the color)
+
+				// holding both bright buttons save and exit colour
+
+				// oh need to add eeprom code to remember the colours
 				break;
 			default:
 				break;

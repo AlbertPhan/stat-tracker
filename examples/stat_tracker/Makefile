@@ -21,6 +21,7 @@ C_FILES = \
 	../../include/timer.c\
 	../../include/touch.c\
 	../../include/button.c\
+	../../include/eeprom.c\
 	#../../include/usb-cdc.c\
 	../../include/hardware.c\
 
