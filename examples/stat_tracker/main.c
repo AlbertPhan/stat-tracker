@@ -13,16 +13,20 @@ TODO:
 [x] change to HSV for LEDs (convert functions to use HSV)
 [x] Touch buttons for brightness control
 [x] FIX HSVtoRGB() not properly converting for saturation values above 128
-[] Add color configuration states using multi button presses
+[] Add color configuration
+	[x] Add eeprom code to remember colour config
+	[] Fix brightness not toggling when trying to enter colour config mode
+	[] No brightness control while in config
 [] Fix led showing garbage data on power on
 [x] Fix battery icon showing wrong hue - ADC related? ADC and touch inputs were damaged from ESD. Series protection resitors were added
-[] Add eeprom code to remember colour config
+
 [x] Fix fill_bar_binary not working past 16 bits
 [] Use interrupts for touch buttons if needed to save some time during the update loop (about 4 ms)
 [x] Dim display when battery critically low
 [x] Add flag for critically low batt so it doesnt toggle the flashing state
 [x] Fix battery icon to not fade after constant voltage charged
 [x] Add tkey to button stuff so it can retrigger
+
 */
 
 //#define USB_ENABLE
@@ -74,6 +78,7 @@ TODO:
 #define RETRIGGER_DELAY 500 	// Time button held down before
 
 #define RED_HUE 0
+#define ORANGE_HUE 30
 #define GREEN_HUE 85
 #define BLUE_HUE 170
 #define DEFAULT_BRIGHTNESS 30
@@ -99,10 +104,11 @@ __xdata HsvColor hsv_energy = {DEFAULT_ENERGY_HUE,DEFAULT_SATURATION,DEFAULT_BRI
 __xdata HsvColor hsv_energy_alt = {DEFAULT_ENERGY_ALT_HUE,DEFAULT_SATURATION,DEFAULT_BRIGHTNESS};
 __xdata HsvColor hsv_dash = {DEFAULT_DASH_HUE,DEFAULT_SATURATION,DEFAULT_BRIGHTNESS};
 __xdata HsvColor hsv_dash_alt = {DEFAULT_DASH_ALT_HUE,DEFAULT_SATURATION,DEFAULT_BRIGHTNESS};
-__xdata HsvColor hsv_charged = {GREEN_HUE,DEFAULT_SATURATION, DEFAULT_BRIGHTNESS};
-__xdata HsvColor hsv_charging = {30, DEFAULT_SATURATION,DEFAULT_BRIGHTNESS};
 __xdata HsvColor hsv_boot = {160,180,DEFAULT_BRIGHTNESS};
 __xdata HsvColor hsv_off = {0,0,0};
+
+__xdata uint8_t batt_charged_hue = GREEN_HUE;
+__xdata uint8_t batt_low_hue = RED_HUE;
 
 // "EEPROM" data flash
 #define EEPROM_BUFFER_LEN 9
@@ -405,7 +411,7 @@ void update_battery_icon_led(const uint8_t batt_charge_adc)
 		}
 	}
 	// Show battery charge from fully charged colour to low colour
-	hsv_batt_icon.h = map(batt_charge_adc,BATT_MIN_ADC,BATT_MAX_ADC,eeprom_buffer[BATT_LOW_ADDR],eeprom_buffer[BATT_CHARGED_ADDR]);
+	hsv_batt_icon.h = map(batt_charge_adc,BATT_MIN_ADC,BATT_MAX_ADC,batt_low_hue,batt_charged_hue);
 	set_led(PWR_LED, &hsv_batt_icon);
 }
 
@@ -531,7 +537,8 @@ void main()
 			hsv_energy_alt.h = eeprom_buffer[EN_ALT_ADDR];
 			hsv_dash.h = eeprom_buffer[DASH_ADDR];
 			hsv_dash_alt.h = eeprom_buffer[DASH_ALT_ADDR];
-			// batt icon data in buffer too
+			batt_charged_hue = eeprom_buffer[BATT_CHARGED_ADDR];
+			batt_low_hue = eeprom_buffer[BATT_LOW_ADDR];
 			eeprom_flag = EEPROM_READ_SUCCESS_INITIALIZED; // testing eeprom initilized
 		}
 		else 
@@ -615,25 +622,34 @@ void main()
 			#endif
 
 			// Do other button stuff related to buttons at the same time
-			// Brightness control
-			if(retrigger_tkey(&tkey_brightup) && !flag_low_batt && !(state == BUTTON))
+
+			// Brightness button controls
+			if(!flag_low_batt && !(state == BUTTON) && !(state == CONFIG))
 			{
-			// Increment value if <= BRIGHTNESS_MAX - BRIGHTNESS_STEP and not low battery
-				if (brightness <= BRIGHTNESS_MAX - BRIGHTNESS_STEP)
+				if((de_retrigger_tkey(&tkey_brightup) || retrigger_tkey(&tkey_brightup)) && !read_tkey(&tkey_brightdown))
 				{
-					brightness += BRIGHTNESS_STEP;
+				// Increment value if <= BRIGHTNESS_MAX - BRIGHTNESS_STEP and not low battery
+					if (brightness <= BRIGHTNESS_MAX - BRIGHTNESS_STEP)
+					{
+						brightness += BRIGHTNESS_STEP;
+					}
 				}
+				if((de_retrigger_tkey(&tkey_brightdown)) && !read_tkey(&tkey_brightup))
+				{
+					// Decrement value if >= 0 + BRIGHTNESS_STEP and not low battery
+					if( brightness > BRIGHTNESS_STEP)
+					{
+						brightness -= BRIGHTNESS_STEP;
+					}
+				}
+				if(long_held_tkey(&tkey_brightup) && long_held_tkey(&tkey_brightdown))
+					state = CONFIG;
 			}
-			if(retrigger_tkey(&tkey_brightdown) && !flag_low_batt &&  !(state == BUTTON))
+
+
+			// TESTING - goes to boot loader when both tkey buttons pressed
+			if(held_tkey(&tkey_brightdown) && activated_tkey(&tkey_brightup))
 			{
-				// Decrement value if >= 0 + BRIGHTNESS_STEP and not low battery
-				if( brightness > BRIGHTNESS_STEP)
-				{
-					brightness -= BRIGHTNESS_STEP;
-				}
-			}
-			if(held_tkey(&tkey_brightup) && held_tkey(&tkey_brightdown))
-			{// TESTING - goes to boot loader when both tkey buttons pressed
 				// Turn off WS2812's before starting bootloader
 				for (i = 0; i < LED_COUNT*3; i++)
 					led_data[i] = 0;
@@ -661,51 +677,49 @@ void main()
 			hsv_energy_alt.v = brightness;
 			hsv_dash.v = brightness;
 			hsv_dash_alt.v = brightness; 
-			hsv_charged.v = brightness;
-			hsv_charging.v = brightness;
 			hsv_boot.v = brightness;
 			hsv.v = brightness;
 
 			// TESTING using dash buttons to switch between states
-			if(retrigger(&btn_dash_p))
+			if(de_retrigger(&btn_dash_p))
 			{
 				if(state < MAX_STATES)
 				{
 					state++;
 				}
 			}
-			if(retrigger(&btn_dash_n))
+			if(de_retrigger(&btn_dash_n))
 			{
 				if(state > BATTERY)
 				{
 					state--;
 				}
 			}
-
+			
 			// Adjust stats in RUNNING state
 			if(state == RUNNING)
 			{
 				// clamp to 2 * full_bar_length for overfill
-				if (hp_value < 2*(FULL_BAR_LENGTH) && retrigger(&btn_hp_p))
+				if (hp_value < 2*(FULL_BAR_LENGTH) && de_retrigger(&btn_hp_p))
 					hp_value++;
-				else if (hp_value > 0 && retrigger(&btn_hp_n))
+				else if (hp_value > 0 && de_retrigger(&btn_hp_n))
 					hp_value--;
 				
-				if (energy_value < 2*(FULL_BAR_LENGTH) && retrigger(&btn_en_p))
+				if (energy_value < 2*(FULL_BAR_LENGTH) && de_retrigger(&btn_en_p))
 					energy_value++;
-				else if (energy_value > 0 && retrigger(&btn_en_n))
+				else if (energy_value > 0 && de_retrigger(&btn_en_n))
 					energy_value--;		
 				
-				if (dash_value < 2*(DASH_BAR_LENGTH) && retrigger(&btn_dash_p))
+				if (dash_value < 2*(DASH_BAR_LENGTH) && de_retrigger(&btn_dash_p))
 					dash_value++;
-				else if (dash_value > 0 && retrigger(&btn_dash_n))
+				else if (dash_value > 0 && de_retrigger(&btn_dash_n))
 					dash_value--;
 			}
 			
 			// Saturation Control (only for state COLOR_PALLETTE)
 			if(state == COLOR_PALLETTE)
 			{
-				if(retrigger(&btn_hp_p))
+				if(de_retrigger(&btn_hp_p))
 				{
 					// Increment saturation if less than 255
 					if (hsv.s < 251)
@@ -714,7 +728,7 @@ void main()
 					}
 					
 				}
-				if(retrigger(&btn_hp_n))
+				if(de_retrigger(&btn_hp_n))
 				{
 					// Decrement saturation if more than 0
 					if(hsv.s > 4)
@@ -735,7 +749,10 @@ void main()
 				hsv.h = hsv_health.h + 10;
 				fill_bar_binary(EN_BAR_END,battery_charge_adc,8,&hsv);
 				if(STAT == 0)
-					set_led(DASH_BAR_END,&hsv_charging);
+				{
+					hsv.h = ORANGE_HUE;
+					set_led(DASH_BAR_END,&hsv);
+				}
 				else
 					set_led_off(DASH_BAR_END);
 				break;
@@ -894,11 +911,15 @@ void main()
 
 				break;
 			case CONFIG:
-				fill_bar_binary(DASH_BAR_END,eeprom_flag,5,&hsv_health);	// testing
-				// add button code to go into this state when both brightness buttons are long held
+				//fill_bar_binary(DASH_BAR_END,eeprom_flag,5,&hsv_health);	// testing
 
 				// Show the current colour pallete
-
+				fill_bar(HP_BAR_START,HP_BAR_START+10,255,&hsv_health_alt);
+				fill_bar(HP_BAR_START+10,HP_BAR_END,255,&hsv_health);
+				fill_bar(EN_BAR_START,EN_BAR_START+10,255,&hsv_energy_alt);
+				fill_bar(EN_BAR_START+10,EN_BAR_END,255,&hsv_energy);
+				fill_bar(DASH_BAR_START,DASH_BAR_START+2,255,&hsv_dash_alt);
+				fill_bar(DASH_BAR_START+2,DASH_BAR_END,255,&hsv_dash);
 				// up and down adjust colour pallete
 
 				// dash + and - move which colour to be edited (flashing the color)

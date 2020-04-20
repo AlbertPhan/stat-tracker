@@ -1,19 +1,40 @@
+/*
+efficient debouncing button and touchkey library for embedded CH552/CH554 MCU
+Date 4/20/2020
+Albert Phan
 
+TODO:
+[] update button to do long held as well like tkey button is done
+[] find out if we can use only 8 bits for some of the timings
+
+
+This code gives certain button states such as activated/deactivated/held/long_held/retrigger/de_retrigger. A timer library with millis() function is required.
+Most notable feature is retrigger which will return true for every RETRIGGER_TIME after held time has passed.
+Time counters are shortened to main loop periods instead of millis() to save on bytes . Be sure that your times can fit within a single byte (max 255) where necessary .
+
+Usage button example:
+ - Create Button struct with all values initialized to 0;
+ - Update each button with the button value (1 for button ON, 0 for button off) per main loop
+ - Use functions to return button states and act upon them.
+
+Modified code from https://github.com/thomasfredericks/Bounce2
+*/
 
 #include <stdint.h>
-#include <timer.h>
+#include <timer.h> // LOOP_PERIOD_MS and millis()
 #include "button.h"
-#include <touch.h>
+#include <touch.h> 
 
+// Times in ms
 #define DEBOUNCE_TIME 20	// debounce time in ms
-#define HELD_TIME 300		// time before retriggering happens
+#define HELD_TIME 300		// time before retriggering happens 
 #define RETRIGGER_TIME 100	// time between button retriggers when held down
 #define TKEY_HELD_TIME 500
 #define TKEY_RETRIGGER_TIME 100
-#define LONG_HELD_TIME 5000 // 
+#define LONG_HELD_TIME 2000 // Testing to 2.0s for now - 5.0s for default
 
 #define DEBOUNCED_STATE (1<<0)
-#define UNSTABLE_STATE (1<<1)
+#define UNSTABLE_STATE (1<<1)	// Used with a different type of debouncing that's currently not implemented
 #define STATE_CHANGED (1<<2)
 #define STATE_ACTIVATED (1<<3)
 #define STATE_DEACTIVATED (1<<4)
@@ -31,7 +52,7 @@
 void update_button(button * btn, uint8_t current_button_state)
 {
 	// update the button
-	uint16_t current_btn_millis = millis();
+	uint16_t current_btn_millis = millis();	// truncate millis() to 16 bit
 	// Update the debounced state and if state changed 
 	// Reset states if previously changed
 	btn->state &= ~STATE_CHANGED;
@@ -95,7 +116,6 @@ void update_button(button * btn, uint8_t current_button_state)
 		if(current_button_state)
 			{
 				btn->state |= STATE_ACTIVATED;
-				btn->state |= STATE_RETRIGGER; // activates for initial press
 			}
 		else
 			btn->state |= STATE_DEACTIVATED;
@@ -188,7 +208,6 @@ void update_tkey(touchkey *tkey, uint16_t current_tkey_data)
 			{
 				
 				tkey->state |= STATE_ACTIVATED;
-				tkey->state |= STATE_RETRIGGER; // activates for initial press
 			}
 		else	// tkey off
 			{
@@ -217,10 +236,16 @@ uint8_t read(button * btn)
 	return btn->state & DEBOUNCED_STATE;
 }
 
-// Returns true when button first activated and repeats periodically after held time has passed
+// Returns true every RETRIGGER_TIME after held time has passed
 uint8_t retrigger(button * btn)
 {
 	return btn->state & STATE_RETRIGGER;
+}
+
+// Returns true every RETRIGGER_TIME after held time has passed and also when button was let go
+uint8_t de_retrigger(button * btn)
+{
+	return btn->state & (STATE_RETRIGGER | STATE_DEACTIVATED);
 }
 
 uint8_t held(button * btn)
@@ -247,6 +272,10 @@ uint8_t read_tkey(touchkey * tkey)
 uint8_t retrigger_tkey(touchkey * tkey)
 {
 	return tkey->state & STATE_RETRIGGER;
+}
+uint8_t de_retrigger_tkey(touchkey * tkey)
+{
+	return tkey->state & (STATE_RETRIGGER | STATE_DEACTIVATED);
 }
 
 uint8_t held_tkey(touchkey * tkey)
