@@ -9,8 +9,8 @@ CPU_FREQ = 16000000
 # 0x0080 EP2Buffer[2*64]
 #
 # This takes a total of 256bytes, so there are 768 bytes left.
-XRAM_SIZE = 0x0300
-XRAM_LOC = 0x0100
+# XRAM_SIZE = 0x0300
+# XRAM_LOC = 0x0100
 
 C_FILES = \
 	main.c \
