@@ -38,7 +38,7 @@ void timer0_ISR() __interrupt (INT_NO_TMR0)
     }
 }
 
-inline uint32_t millis()
+uint32_t millis()
 {
     return millis_cnt;
 }
