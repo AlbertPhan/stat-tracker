@@ -12,6 +12,8 @@ CPU_FREQ = 16000000
 # XRAM_SIZE = 0x0300
 # XRAM_LOC = 0x0100
 
+CODE_SIZE = 0x3800	# 14KiB for CH552
+
 C_FILES = \
 	main.c \
 	../../include/color_utils.c \
