@@ -13,7 +13,10 @@ TODO:
 [x] change to HSV for LEDs (convert functions to use HSV)
 [x] Touch buttons for brightness control
 [x] FIX HSVtoRGB() not properly converting for saturation values above 128
-[] Add eeprom health and energy values saving
+[x] Add eeprom health and energy values saving
+	[x] Add initilization to eeprom code
+	[x] Add function to save just the stats on eeprom
+	[x] save stats everytime they change
 [x] Add color configuration
 	[x] Add eeprom code to remember colour config
 	[x] Fix brightness not toggling when trying to enter colour config mode
@@ -107,6 +110,10 @@ TODO:
 #define DEFAULT_BATT_CHARGED_HUE GREEN_HUE
 #define DEFAULT_BATT_LOW_HUE RED_HUE
 
+#define DEFAULT_HP 10
+#define DEFAULT_EP 10
+#define DEFAULT_DP 3
+
 __xdata uint8_t brightness = DEFAULT_BRIGHTNESS; // default brightness
 __xdata uint8_t saturation = DEFAULT_SATURATION;	// default saturation
 
@@ -144,15 +151,15 @@ __xdata enum cpalette current_colour_palette_enum = default_colour_palette;
 enum config_state {HEALTH_ALT,HEALTH,ENERGY_ALT,ENERGY,DASH_ALT,DASH,BATT_CHARGED,BATT_LOW, NO_CONFIG};
 
 // "EEPROM" data flash
-#define EEPROM_BUFFER_LEN 10
+#define EEPROM_BUFFER_LEN 13
 #define INIT_FLASH_BYTE 0x55
 #define EEPROM_READ_SUCCESS_INITIALIZED 1
 #define EEPROM_READ_SUCCESS_NO_INIT (1<<1)
 #define EEPROM_WRITE_SUCCESS (1<<2)
 #define EEPROM_WRITE_FAIL (1<<3)
 __xdata uint8_t eeprom_buffer[EEPROM_BUFFER_LEN];
-enum address {INIT_BYTE_ADDR,HP_ADDR,HP_ALT_ADDR,EN_ADDR,EN_ALT_ADDR,DASH_ADDR,DASH_ALT_ADDR,BATT_CHARGED_ADDR,BATT_LOW_ADDR,COLOUR_PALETTE_ADDR};
-__xdata uint8_t eeprom_flag = 0;
+enum address {INIT_BYTE_ADDR,HP_ADDR,EP_ADDR,DP_ADDR,HEALTH_HUE_ADDR,HEALTH_ALT_HUE_ADDR,ENERGY_HUE_ADDR,ENERGY_ALT_HUE_ADDR,DASH_HUE_ADDR,DASH_ALT_HUE_ADDR,BATT_CHARGED_ADDR,BATT_LOW_ADDR,COLOUR_PALETTE_ADDR};
+__xdata uint8_t eeprom_flag = 0; // For debugging
 
 
 #define PIN_STAT 4		// STATUS from lipo charger P3.4
@@ -649,12 +656,15 @@ uint8_t eeprom_write_defaults()
 {
 	uint8_t bytes_written;	// TODO: change to custom colours since default colours need not be saved to eeprom
 	eeprom_buffer[INIT_BYTE_ADDR] = INIT_FLASH_BYTE;
-	eeprom_buffer[HP_ADDR] = DEFAULT_HEALTH_HUE;
-	eeprom_buffer[HP_ALT_ADDR] = DEFAULT_HEALTH_ALT_HUE;
-	eeprom_buffer[EN_ADDR] = DEFAULT_ENERGY_HUE;
-	eeprom_buffer[EN_ALT_ADDR] = DEFAULT_ENERGY_ALT_HUE;
-	eeprom_buffer[DASH_ADDR] = DEFAULT_DASH_HUE; 
-	eeprom_buffer[DASH_ALT_ADDR] = DEFAULT_DASH_ALT_HUE;
+	eeprom_buffer[HP_ADDR] = DEFAULT_HP;
+	eeprom_buffer[EP_ADDR] = DEFAULT_EP;
+	eeprom_buffer[DP_ADDR] = DEFAULT_DP;
+	eeprom_buffer[HEALTH_HUE_ADDR] = DEFAULT_HEALTH_HUE;
+	eeprom_buffer[HEALTH_ALT_HUE_ADDR] = DEFAULT_HEALTH_ALT_HUE;
+	eeprom_buffer[ENERGY_HUE_ADDR] = DEFAULT_ENERGY_HUE;
+	eeprom_buffer[ENERGY_ALT_HUE_ADDR] = DEFAULT_ENERGY_ALT_HUE;
+	eeprom_buffer[DASH_HUE_ADDR] = DEFAULT_DASH_HUE; 
+	eeprom_buffer[DASH_ALT_HUE_ADDR] = DEFAULT_DASH_ALT_HUE;
 	eeprom_buffer[BATT_LOW_ADDR] = RED_HUE;
 	eeprom_buffer[BATT_CHARGED_ADDR] = GREEN_HUE;
 	eeprom_buffer[COLOUR_PALETTE_ADDR] = default_colour_palette;
@@ -674,12 +684,12 @@ uint8_t eeprom_write_custom_colours(enum cpalette current_colour_palette,colour_
 {
 	uint8_t bytes_written;
 	eeprom_buffer[INIT_BYTE_ADDR] = INIT_FLASH_BYTE;
-	eeprom_buffer[HP_ADDR] = colours->health_hue;
-	eeprom_buffer[HP_ALT_ADDR] = colours->health_alt_hue;
-	eeprom_buffer[EN_ADDR] = colours->energy_hue;
-	eeprom_buffer[EN_ALT_ADDR] = colours->energy_alt_hue;
-	eeprom_buffer[DASH_ADDR] = colours->dash_hue; 
-	eeprom_buffer[DASH_ALT_ADDR] = colours->dash_alt_hue;
+	eeprom_buffer[HEALTH_HUE_ADDR] = colours->health_hue;
+	eeprom_buffer[HEALTH_ALT_HUE_ADDR] = colours->health_alt_hue;
+	eeprom_buffer[ENERGY_HUE_ADDR] = colours->energy_hue;
+	eeprom_buffer[ENERGY_ALT_HUE_ADDR] = colours->energy_alt_hue;
+	eeprom_buffer[DASH_HUE_ADDR] = colours->dash_hue; 
+	eeprom_buffer[DASH_ALT_HUE_ADDR] = colours->dash_alt_hue;
 	eeprom_buffer[BATT_LOW_ADDR] = colours->batt_low_hue;
 	eeprom_buffer[BATT_CHARGED_ADDR] = colours->batt_charged_hue;
 	eeprom_buffer[COLOUR_PALETTE_ADDR] = current_colour_palette;
@@ -691,11 +701,35 @@ uint8_t eeprom_write_custom_colours(enum cpalette current_colour_palette,colour_
 	return bytes_written;
 }
 
+// todo: add function to write only the 3 stats
+uint8_t eeprom_write_stats(enum config_state stat, uint8_t value)
+{
+	uint8_t bytes_written;
+	
+	switch (stat)
+	{
+	case HEALTH:
+		bytes_written = WriteDataFlash(HP_ADDR,&value,1);
+		break;
+	case ENERGY:
+		bytes_written = WriteDataFlash(EP_ADDR,&value,1);
+		break;
+	case DASH:
+		bytes_written = WriteDataFlash(DP_ADDR,&value,1);
+		break;
+	default:
+		break;
+	}
+	
+}
+
+
+
 void main() 
 {
-	__xdata uint8_t hp_value = 10;
-	__xdata uint8_t energy_value = 10;
-	__xdata uint8_t dash_value = 2;
+	__xdata uint8_t hp_value = DEFAULT_HP;
+	__xdata uint8_t energy_value = DEFAULT_EP;
+	__xdata uint8_t dash_value = DEFAULT_DP;
 	__xdata uint8_t state = RUNNING;	// Default State
 	__xdata uint16_t battery_charge_adc = 0; // from 0 - 255 and also used for summing (need 16 bits)
 	__xdata uint8_t buffer_index = 0;
@@ -746,13 +780,13 @@ void main()
 	colour_blind_tri_colours.batt_low_hue = RED_HUE;
 
 	__xdata colour_palette custom_colours;
-	custom_colours.health_hue = RED_HUE;
-	custom_colours.health_alt_hue = PINK_HUE; 
-	custom_colours.energy_hue = BLUE_HUE;
-	custom_colours.energy_alt_hue = PURPLE_HUE; 
-	custom_colours.dash_hue = TEAL_HUE;	
-	custom_colours.dash_alt_hue = ORANGE_HUE;
-	custom_colours.batt_charged_hue = GREEN_HUE;
+	custom_colours.health_hue = GREEN_HUE;
+	custom_colours.health_alt_hue = TEAL_HUE; 
+	custom_colours.energy_hue = RED_HUE;
+	custom_colours.energy_alt_hue = ORANGE_HUE; 
+	custom_colours.dash_hue = PURPLE_HUE;	
+	custom_colours.dash_alt_hue = BLUE_HUE;
+	custom_colours.batt_charged_hue = PINK_HUE;
 	custom_colours.batt_low_hue = RED_HUE;
 
 	CfgFsys();
@@ -830,7 +864,9 @@ void main()
 	{
 		if(eeprom_buffer[INIT_BYTE_ADDR] == 0x55)	// if it has been initilizated then use the data
 		{
-
+			hp_value = eeprom_buffer[HP_ADDR];
+			energy_value = eeprom_buffer[EP_ADDR];
+			dash_value = eeprom_buffer[DP_ADDR];
 			current_colour_palette_enum = eeprom_buffer[COLOUR_PALETTE_ADDR];
 			switch (current_colour_palette_enum)
 			{
@@ -845,12 +881,12 @@ void main()
 				break;
 			case custom:
 				// get custom colour data
-				custom_colours.health_hue = eeprom_buffer[HP_ADDR];
-				custom_colours.health_alt_hue = eeprom_buffer[HP_ALT_ADDR];
-				custom_colours.energy_hue = eeprom_buffer[EN_ADDR];
-				custom_colours.energy_alt_hue = eeprom_buffer[EN_ALT_ADDR];
-				custom_colours.dash_hue = eeprom_buffer[DASH_ADDR];
-				custom_colours.dash_alt_hue = eeprom_buffer[DASH_ALT_ADDR];
+				custom_colours.health_hue = eeprom_buffer[HEALTH_HUE_ADDR];
+				custom_colours.health_alt_hue = eeprom_buffer[HEALTH_ALT_HUE_ADDR];
+				custom_colours.energy_hue = eeprom_buffer[ENERGY_HUE_ADDR];
+				custom_colours.energy_alt_hue = eeprom_buffer[ENERGY_ALT_HUE_ADDR];
+				custom_colours.dash_hue = eeprom_buffer[DASH_HUE_ADDR];
+				custom_colours.dash_alt_hue = eeprom_buffer[DASH_ALT_HUE_ADDR];
 				custom_colours.batt_charged_hue = eeprom_buffer[BATT_CHARGED_ADDR];
 				custom_colours.batt_low_hue = eeprom_buffer[BATT_LOW_ADDR];
 				change_current_cpalette(&custom_colours);
@@ -940,6 +976,7 @@ void main()
 			UsbCdc_processInput();
 			#endif
 
+			/////////////////////////////////////////////////////////////////////////////////
 			// Do other button stuff related to buttons at the same time
 
 			// Brightness button controls
@@ -962,7 +999,11 @@ void main()
 					}
 				}
 				if(long_held_tkey(&tkey_brightup) && long_held_tkey(&tkey_brightdown))
+				{
 					state = CONFIG;
+					current_config_state = 0;
+				}
+					
 			}
 
 
@@ -1021,20 +1062,28 @@ void main()
 			if(state == RUNNING)
 			{
 				// clamp to 2 * full_bar_length for overfill
+				
 				if (hp_value < 2*(FULL_BAR_LENGTH) && de_retrigger(&btn_hp_p))
 					hp_value++;
 				else if (hp_value > 0 && de_retrigger(&btn_hp_n))
 					hp_value--;
+				if(de_retrigger(&btn_hp_p) || de_retrigger(&btn_hp_n))
+					eeprom_write_stats(HEALTH, hp_value);
 				
 				if (energy_value < 2*(FULL_BAR_LENGTH) && de_retrigger(&btn_en_p))
 					energy_value++;
 				else if (energy_value > 0 && de_retrigger(&btn_en_n))
-					energy_value--;		
+					energy_value--;
+				if(de_retrigger(&btn_en_p) || de_retrigger(&btn_en_n))
+					eeprom_write_stats(ENERGY, energy_value);
 				
 				if (dash_value < 2*(DASH_BAR_LENGTH) && de_retrigger(&btn_dash_p))
 					dash_value++;
 				else if (dash_value > 0 && de_retrigger(&btn_dash_n))
 					dash_value--;
+				if(de_retrigger(&btn_dash_p) || de_retrigger(&btn_dash_n))
+					eeprom_write_stats(DASH, dash_value);
+
 			}
 			
 			// Saturation Control (only for state COLOR_PALLETTE)
@@ -1162,7 +1211,7 @@ void main()
 					else
 						set_led_off(DASH_BAR_END);
 				}
-				else if(read_tkey(&tkey_brightdown))// testing 1 on
+				else if(read_tkey(&tkey_brightdown))
 				{
 					fill_bar_binary(HP_BAR_END,tkey_brightdown.time_loops,16,&hsv_dash);
 					fill_bar_binary(EN_BAR_END,tkey_brightdown.state,8,&hsv_dash);
@@ -1251,19 +1300,16 @@ void main()
 				default:
 					break;
 				}
-                
-
-
 
 				// up and down adjust colour palette
-				if(deactivated_tkey(&tkey_brightup) && !long_held_tkey(&tkey_brightup))
+				if(deactivated(&btn_dash_p))
 				{
 					if(current_colour_palette_enum >= MAX_COLOUR_PALETTE)
 						current_colour_palette_enum = MAX_COLOUR_PALETTE;
 					else
 						current_colour_palette_enum++;
 				}
-				if(deactivated_tkey(&tkey_brightdown) && !long_held_tkey(&tkey_brightdown))
+				if(deactivated(&btn_dash_n))
 				{
 					if(current_colour_palette_enum <= 0)
 						current_colour_palette_enum = 0;
@@ -1271,14 +1317,14 @@ void main()
 						current_colour_palette_enum--;
 				}
 				// dash + and - move which colour to be edited (flashing the color)
-                if(activated(&btn_dash_p))
+                if(activated(&btn_en_p))
                 {
                     if(current_config_state >= MAX_CONFIG_STATE)
                         current_config_state = MAX_CONFIG_STATE;
 					else
 						current_config_state++;
                 }
-				if(activated(&btn_dash_n))
+				if(activated(&btn_en_n))
 				{
 					if(current_config_state <= 0)
 						current_config_state = 0;
@@ -1303,9 +1349,7 @@ void main()
 						change_current_cpalette(&colour_blind_tri_colours);
 						break;
 					case custom:
-						// TODO: fix why when custom colour is changed and saved and then when you renter config it shows old custom data
 						change_current_cpalette(&custom_colours);
-						
 						break;
 					default:
 						break;
@@ -1314,7 +1358,7 @@ void main()
 				}
 
 				// testing show current_colour_palette_enum value
-				fill_bar(HP_BAR_START,HP_BAR_START+3,current_colour_palette_enum,&hsv_health);
+				//fill_bar(HP_BAR_START,HP_BAR_START+3,current_colour_palette_enum,&hsv_health);
 				break;
 			default:
 				break;

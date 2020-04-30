@@ -21,3 +21,7 @@ examples/sleep/Makefile
 examples/stat_tracker/stat_tracker.code-workspace
 examples/stat_tracker/stat_tracker.code-workspace
 .vscode/bookmarks.json
+
+.vscode/bookmarks.json
+examples/stat_tracker/stat_tracker.code-workspace
+.vscode/launch.json
