@@ -13,12 +13,16 @@ TODO:
 [x] change to HSV for LEDs (convert functions to use HSV)
 [x] Touch buttons for brightness control
 [x] FIX HSVtoRGB() not properly converting for saturation values above 128
-[] Add color configuration
+[] Add eeprom health and energy values saving
+[x] Add color configuration
 	[x] Add eeprom code to remember colour config
 	[x] Fix brightness not toggling when trying to enter colour config mode
 	[x] No brightness control while in config
 	[x] Create default colour palettes
 	[x] Create function to show colour palettes using colour palette type struct
+	[x] add eeprom save
+[] Fix slow fading not working at 3 seconds but 1 second is ok
+[] Add Startup animation
 [] Fix led showing garbage data on power on
 [x] Fix battery icon showing wrong hue - ADC related? ADC and touch inputs were damaged from ESD. Series protection resitors were added
 
@@ -137,7 +141,7 @@ enum cpalette {default_colour_palette, colour_blind_deu, colour_blind_tri,custom
 __xdata enum cpalette current_colour_palette_enum = default_colour_palette;
 
 #define MAX_CONFIG_STATE 7
-enum config_state {HEALTH_ALT,HEALTH,ENERGY_ALT,ENERGY,DASH_ALT,DASH,BATT_CHARGED,BATT_LOW};
+enum config_state {HEALTH_ALT,HEALTH,ENERGY_ALT,ENERGY,DASH_ALT,DASH,BATT_CHARGED,BATT_LOW, NO_CONFIG};
 
 // "EEPROM" data flash
 #define EEPROM_BUFFER_LEN 10
@@ -425,7 +429,7 @@ void fill_colour_palette(colour_palette * colours, uint8_t config_mode)
 	// Health alt colour leds 1-10
 	hsv.h = colours->health_alt_hue;
 	if(config_mode == HEALTH_ALT)
-		hsv.v = flash_brightness(DEFAULT_BRIGHTNESS, &fade_battery);
+		hsv.v = flash_brightness(DEFAULT_BRIGHTNESS, &fade_battery_fast);
 	else
 		hsv.v = DEFAULT_BRIGHTNESS;
 	
@@ -433,35 +437,35 @@ void fill_colour_palette(colour_palette * colours, uint8_t config_mode)
 	// Health colour leds 11-20
 	hsv.h = colours->health_hue;
 	if(config_mode == HEALTH)
-		hsv.v = flash_brightness(DEFAULT_BRIGHTNESS, &fade_battery);	
+		hsv.v = flash_brightness(DEFAULT_BRIGHTNESS, &fade_battery_fast);	
 	else
 		hsv.v = DEFAULT_BRIGHTNESS;
 	fill_bar(HP_BAR_START+10,HP_BAR_END,255,&hsv);
 	// energy alt colour leds 21-30
 	hsv.h = colours->energy_alt_hue;
 	if(config_mode == ENERGY_ALT)
-		hsv.v = flash_brightness(DEFAULT_BRIGHTNESS, &fade_battery);
+		hsv.v = flash_brightness(DEFAULT_BRIGHTNESS, &fade_battery_fast);
 	else
 		hsv.v = DEFAULT_BRIGHTNESS;
 	fill_bar(EN_BAR_START,EN_BAR_START+10,255,&hsv);
 	// energy colour leds 31-40
 	hsv.h = colours->energy_hue;
 	if(config_mode == ENERGY)
-		hsv.v = flash_brightness(DEFAULT_BRIGHTNESS, &fade_battery);
+		hsv.v = flash_brightness(DEFAULT_BRIGHTNESS, &fade_battery_fast);
 	else
 		hsv.v = DEFAULT_BRIGHTNESS;
 	fill_bar(EN_BAR_START+10,EN_BAR_END,255,&hsv);
 	// dash alt colour leds 41-43
 	hsv.h = colours->dash_alt_hue;
 	if(config_mode == DASH_ALT)
-		hsv.v = flash_brightness(DEFAULT_BRIGHTNESS, &fade_battery);
+		hsv.v = flash_brightness(DEFAULT_BRIGHTNESS, &fade_battery_fast);
 	else
 		hsv.v = DEFAULT_BRIGHTNESS;
 	fill_bar(DASH_BAR_START,DASH_BAR_START+2,255,&hsv);
 	// dash colour leds 44-45
 	hsv.h = colours->dash_hue;
 	if(config_mode == DASH)
-		hsv.v = flash_brightness(DEFAULT_BRIGHTNESS, &fade_battery);
+		hsv.v = flash_brightness(DEFAULT_BRIGHTNESS, &fade_battery_fast);
 	else
 		hsv.v = DEFAULT_BRIGHTNESS;
 	fill_bar(DASH_BAR_START+2,DASH_BAR_END,255,&hsv);
@@ -470,12 +474,12 @@ void fill_colour_palette(colour_palette * colours, uint8_t config_mode)
 	if(config_mode == BATT_CHARGED)
 	{
 		hsv.h = colours->batt_charged_hue;
-		hsv.v = flash_brightness(DEFAULT_BRIGHTNESS, &fade_battery);
+		hsv.v = flash_brightness(DEFAULT_BRIGHTNESS, &fade_battery_fast);
 	}
 	else if(config_mode == BATT_LOW)
 	{
 		hsv.h = colours->batt_low_hue;
-		hsv.v = flash_brightness(DEFAULT_BRIGHTNESS, &fade_battery_fast);
+		hsv.v = flash_brightness(DEFAULT_BRIGHTNESS, &fade_very_fast);
 	}	
 	else
 		hsv.v = DEFAULT_BRIGHTNESS;
@@ -483,7 +487,7 @@ void fill_colour_palette(colour_palette * colours, uint8_t config_mode)
 	// fade between batt charged and low colours when not in config
 	if((config_mode != BATT_CHARGED) && (config_mode != BATT_LOW))
 	{
-		fade_brightness(DEFAULT_BRIGHTNESS,&fade_slow); // called just to update the fade
+		fade_brightness(DEFAULT_BRIGHTNESS,&fade_slow); // called just to update the fade animation
 		hsv.h = map8bit(fade_slow.frames,0,fade_slow.fade_time/LOOP_PERIOD_MS,colours->batt_low_hue,colours->batt_charged_hue);
 	}
 	set_led(PWR_LED,&hsv);
@@ -492,23 +496,38 @@ void fill_colour_palette(colour_palette * colours, uint8_t config_mode)
 
 // returns a value after it has been incremented or decremented and clamped to min 0 or max 255
 // increment - true to increment, false to decrement
-uint8_t clamp8bit(uint8_t value, uint8_t amount_change, uint8_t increment)
+// clamp - true to clamp to min 0 or max 255, false to loop around
+uint8_t adjust8bit(uint8_t value, uint8_t amount_change, uint8_t increment, uint8_t clamp)
 {
 	// if increasing
 	if(increment)
 	{
 		// Increment hue if less than 251
-		if (value <= 255 - amount_change)
+		if(clamp)
 		{
-			value += amount_change;
+			if (value <= 255 - amount_change)
+			{
+				value += amount_change;
+			}
 		}
+		else
+		{
+			value += amount_change;	// when overflow, it should loop back to 0
+		}
+		
 	}
 	else // if decreasing
 	{
-		// Decrement saturation if more than 4
-		if(value >= 0 + amount_change)
+		if(clamp)
+		{// Decrement saturation if more than 4
+			if(value >= 0 + amount_change)
+			{
+				value -= amount_change;
+			}
+		}
+		else
 		{
-			value -= amount_change;
+			value -= amount_change; // when carry, it should loop back to 255
 		}
 	}
 	return value;
@@ -524,32 +543,46 @@ void adjust_colour_palette(colour_palette * colours, enum config_state config, u
 	switch (config)
 	{
 	case HEALTH:
-		colours->health_hue = clamp8bit(colours->health_hue,HUE_INCREMENT,increment);
+		colours->health_hue = adjust8bit(colours->health_hue,HUE_INCREMENT,increment,0);
 		break;
 	case HEALTH_ALT:
-		colours->health_alt_hue = clamp8bit(colours->health_alt_hue,HUE_INCREMENT,increment);
+		colours->health_alt_hue = adjust8bit(colours->health_alt_hue,HUE_INCREMENT,increment,0);
 		break;
 	case ENERGY:
-		colours->energy_hue = clamp8bit(colours->energy_hue,HUE_INCREMENT,increment);
+		colours->energy_hue = adjust8bit(colours->energy_hue,HUE_INCREMENT,increment,0);
 		break;
 	case ENERGY_ALT:
-		colours->energy_alt_hue = clamp8bit(colours->energy_alt_hue,HUE_INCREMENT,increment);
+		colours->energy_alt_hue = adjust8bit(colours->energy_alt_hue,HUE_INCREMENT,increment,0);
 		break;
 	case DASH:
-		colours->dash_hue = clamp8bit(colours->dash_hue,HUE_INCREMENT,increment);
+		colours->dash_hue = adjust8bit(colours->dash_hue,HUE_INCREMENT,increment,0);
 		break;
 	case DASH_ALT:
-		colours->dash_alt_hue = clamp8bit(colours->dash_alt_hue,HUE_INCREMENT,increment);
+		colours->dash_alt_hue = adjust8bit(colours->dash_alt_hue,HUE_INCREMENT,increment,0);
 		break;
 	case BATT_CHARGED:
-		colours->batt_charged_hue = clamp8bit(colours->batt_charged_hue,HUE_INCREMENT,increment);
+		colours->batt_charged_hue = adjust8bit(colours->batt_charged_hue,HUE_INCREMENT,increment,0);
 		break;
 	case BATT_LOW:
-		colours->batt_low_hue = clamp8bit(colours->batt_low_hue,HUE_INCREMENT,increment);
+		colours->batt_low_hue = adjust8bit(colours->batt_low_hue,HUE_INCREMENT,increment,0);
 		break;
 	default:
 		break;
 	}
+}
+
+// Changes the current colour palette
+// colours - pass address of colour_palette to change to
+void change_current_cpalette(colour_palette * colours)
+{
+	hsv_health.h = colours->health_hue;
+	hsv_health_alt.h = colours->health_alt_hue;
+	hsv_energy.h = colours->energy_hue;
+	hsv_energy_alt.h = colours->energy_alt_hue;
+	hsv_dash.h = colours->dash_hue;
+	hsv_dash_alt.h = colours->dash_alt_hue;
+	batt_charged_hue = colours->batt_charged_hue;
+	batt_low_hue = colours->batt_low_hue;
 }
 
 // Sets the battery icon based on charge value and whether it is charging via usb or not
@@ -614,7 +647,7 @@ void update_battery_icon_led(const uint8_t batt_charge_adc)
 // returns # bytes written
 uint8_t eeprom_write_defaults()
 {
-	uint8_t bytes_written;
+	uint8_t bytes_written;	// TODO: change to custom colours since default colours need not be saved to eeprom
 	eeprom_buffer[INIT_BYTE_ADDR] = INIT_FLASH_BYTE;
 	eeprom_buffer[HP_ADDR] = DEFAULT_HEALTH_HUE;
 	eeprom_buffer[HP_ALT_ADDR] = DEFAULT_HEALTH_ALT_HUE;
@@ -633,7 +666,30 @@ uint8_t eeprom_write_defaults()
 	return bytes_written;
 }
 
+// Saves current colour palette to dataflash
+// TODO: only save custom colour to eeprom, other colourblind colour data should be constant
+// returns # bytes written
 
+uint8_t eeprom_write_custom_colours(enum cpalette current_colour_palette,colour_palette * colours)
+{
+	uint8_t bytes_written;
+	eeprom_buffer[INIT_BYTE_ADDR] = INIT_FLASH_BYTE;
+	eeprom_buffer[HP_ADDR] = colours->health_hue;
+	eeprom_buffer[HP_ALT_ADDR] = colours->health_alt_hue;
+	eeprom_buffer[EN_ADDR] = colours->energy_hue;
+	eeprom_buffer[EN_ALT_ADDR] = colours->energy_alt_hue;
+	eeprom_buffer[DASH_ADDR] = colours->dash_hue; 
+	eeprom_buffer[DASH_ALT_ADDR] = colours->dash_alt_hue;
+	eeprom_buffer[BATT_LOW_ADDR] = colours->batt_low_hue;
+	eeprom_buffer[BATT_CHARGED_ADDR] = colours->batt_charged_hue;
+	eeprom_buffer[COLOUR_PALETTE_ADDR] = current_colour_palette;
+	bytes_written = WriteDataFlash(INIT_BYTE_ADDR,eeprom_buffer, EEPROM_BUFFER_LEN);
+	if(bytes_written == EEPROM_BUFFER_LEN)
+		eeprom_flag = EEPROM_WRITE_SUCCESS;	// write success // remove?
+	else
+		eeprom_flag = EEPROM_WRITE_FAIL; // failed write
+	return bytes_written;
+}
 
 void main() 
 {
@@ -654,6 +710,8 @@ void main()
 	
 	__xdata static enum config_state current_config_state = HEALTH_ALT;
 	// Colour palettes - must define here inside main()
+
+	// TODO: make const if not changing
 	__xdata colour_palette default_colours;
 	default_colours.health_hue = DEFAULT_HEALTH_HUE;
 	default_colours.health_alt_hue = DEFAULT_HEALTH_ALT_HUE;
@@ -676,6 +734,7 @@ void main()
 	colour_blind_deu_colours.batt_charged_hue = BLUE_HUE;
 	colour_blind_deu_colours.batt_low_hue = RED_HUE;
 
+	// REMOVE: is tri needed?
 	__xdata colour_palette colour_blind_tri_colours;
 	colour_blind_tri_colours.health_hue = BLUE_HUE;
 	colour_blind_tri_colours.health_alt_hue = TEAL_HUE;
@@ -698,7 +757,7 @@ void main()
 
 	CfgFsys();
 	bitbangSetup(); // ws2812 pin is setup here
-    bitbangWs2812(LED_COUNT, led_data); // Blank out all leds to get rid of garbage data (not working)
+    bitbangWs2812(LED_COUNT, led_data); // TESTING Blank out all leds to get rid of garbage data (not working)
 	mDelaymS(5);
 
 	// GPIO Setup *****************************
@@ -771,15 +830,34 @@ void main()
 	{
 		if(eeprom_buffer[INIT_BYTE_ADDR] == 0x55)	// if it has been initilizated then use the data
 		{
-			hsv_health.h = eeprom_buffer[HP_ADDR];
-			hsv_health_alt.h = eeprom_buffer[HP_ALT_ADDR];
-			hsv_energy.h = eeprom_buffer[EN_ADDR]; 
-			hsv_energy_alt.h = eeprom_buffer[EN_ALT_ADDR];
-			hsv_dash.h = eeprom_buffer[DASH_ADDR];
-			hsv_dash_alt.h = eeprom_buffer[DASH_ALT_ADDR];
-			batt_charged_hue = eeprom_buffer[BATT_CHARGED_ADDR];
-			batt_low_hue = eeprom_buffer[BATT_LOW_ADDR];
+
 			current_colour_palette_enum = eeprom_buffer[COLOUR_PALETTE_ADDR];
+			switch (current_colour_palette_enum)
+			{
+			case default_colour_palette:
+				change_current_cpalette(&default_colours);
+				break;
+			case colour_blind_deu:
+				change_current_cpalette(&colour_blind_deu_colours);
+				break;
+			case colour_blind_tri:
+				change_current_cpalette(&colour_blind_tri_colours);
+				break;
+			case custom:
+				// get custom colour data
+				custom_colours.health_hue = eeprom_buffer[HP_ADDR];
+				custom_colours.health_alt_hue = eeprom_buffer[HP_ALT_ADDR];
+				custom_colours.energy_hue = eeprom_buffer[EN_ADDR];
+				custom_colours.energy_alt_hue = eeprom_buffer[EN_ALT_ADDR];
+				custom_colours.dash_hue = eeprom_buffer[DASH_ADDR];
+				custom_colours.dash_alt_hue = eeprom_buffer[DASH_ALT_ADDR];
+				custom_colours.batt_charged_hue = eeprom_buffer[BATT_CHARGED_ADDR];
+				custom_colours.batt_low_hue = eeprom_buffer[BATT_LOW_ADDR];
+				change_current_cpalette(&custom_colours);
+				break;
+			default:
+				break;
+			}
 			eeprom_flag = EEPROM_READ_SUCCESS_INITIALIZED; // testing eeprom initilized
 		}
 		else 
@@ -964,12 +1042,12 @@ void main()
 			{
 				if(de_retrigger(&btn_hp_p))
 				{
-					hsv.s = clamp8bit(hsv.s,HUE_INCREMENT,1);
+					hsv.s = adjust8bit(hsv.s,HUE_INCREMENT,1,0);
 					
 				}
 				if(de_retrigger(&btn_hp_n))
 				{
-					hsv.s = clamp8bit(hsv.s,HUE_INCREMENT,0);
+					hsv.s = adjust8bit(hsv.s,HUE_INCREMENT,0,0);
 				}
 			}
 
@@ -1074,79 +1152,79 @@ void main()
 				// fill_bar_binary(EN_BAR_END,current_millis,20,&hsv_dash_alt);	// TESTING
 				break;
 			case BUTTON:
-				// REMOVE later for space saving
-				// if(read_tkey(&tkey_brightup))
-				// {
-				// 	fill_bar_binary(HP_BAR_END,tkey_brightup.time_loops,16,&hsv_dash);
-				// 	fill_bar_binary(EN_BAR_END,tkey_brightup.state,8,&hsv_dash);
-				// 	if(retrigger_tkey(&tkey_brightup))
-				// 		set_led(DASH_BAR_END,&hsv_dash);
-				// 	else
-				// 		set_led_off(DASH_BAR_END);
-				// }
-				// else if(read_tkey(&tkey_brightdown))// testing 1 on
-				// {
-				// 	fill_bar_binary(HP_BAR_END,tkey_brightdown.time_loops,16,&hsv_dash);
-				// 	fill_bar_binary(EN_BAR_END,tkey_brightdown.state,8,&hsv_dash);
-				// 	if(retrigger_tkey(&tkey_brightdown))
-				// 		set_led(DASH_BAR_END,&hsv_dash);
-				// 	else
-				// 		set_led_off(DASH_BAR_END);
-				// }
-				// else if(read(&btn_hp_p))
-				// {
-				// 	fill_bar_binary(HP_BAR_END,btn_hp_p.time_loops,16,&hsv_dash);
-				// 	fill_bar_binary(EN_BAR_END,btn_hp_p.state,8,&hsv_dash);
-				// 	if(retrigger(&btn_hp_p))
-				// 		set_led(DASH_BAR_END,&hsv_dash);
-				// 	else
-				// 		set_led_off(DASH_BAR_END);
-				// }
-				// else if(read(&btn_hp_n))
-				// {
-				// 	fill_bar_binary(HP_BAR_END,btn_hp_n.time_loops,16,&hsv_dash);
-				// 	fill_bar_binary(EN_BAR_END,btn_hp_n.state,8,&hsv_dash);
-				// 	if(retrigger(&btn_hp_n))
-				// 		set_led(DASH_BAR_END,&hsv_dash);
-				// 	else
-				// 		set_led_off(DASH_BAR_END);
-				// }
-				// else if(read(&btn_en_p))
-				// {
-				// 	fill_bar_binary(HP_BAR_END,btn_en_p.time_loops,16,&hsv_dash);
-				// 	fill_bar_binary(EN_BAR_END,btn_en_p.state,8,&hsv_dash);
-				// 	if(retrigger(&btn_en_p))
-				// 		set_led(DASH_BAR_END,&hsv_dash);
-				// 	else
-				// 		set_led_off(DASH_BAR_END);
-				// }
-				// else if(read(&btn_en_n))
-				// {
-				// 	fill_bar_binary(HP_BAR_END,btn_en_n.time_loops,16,&hsv_dash);
-				// 	fill_bar_binary(EN_BAR_END,btn_en_n.state,8,&hsv_dash);
-				// 	if(retrigger(&btn_en_n))
-				// 		set_led(DASH_BAR_END,&hsv_dash);
-				// 	else
-				// 		set_led_off(DASH_BAR_END);
-				// }
-				// else if(read(&btn_dash_p))
-				// {
-				// 	fill_bar_binary(HP_BAR_END,btn_dash_p.time_loops,16,&hsv_dash);
-				// 	fill_bar_binary(EN_BAR_END,btn_dash_p.state,8,&hsv_dash);
-				// 	if(retrigger(&btn_dash_p))
-				// 		set_led(DASH_BAR_END,&hsv_dash);
-				// 	else
-				// 		set_led_off(DASH_BAR_END);
-				// }
-				// else if(read(&btn_dash_n))
-				// {
-				// 	fill_bar_binary(HP_BAR_END,btn_dash_n.time_loops,16,&hsv_dash);
-				// 	fill_bar_binary(EN_BAR_END,btn_dash_n.state,8,&hsv_dash);
-				// 	if(retrigger(&btn_dash_n))
-				// 		set_led(DASH_BAR_END,&hsv_dash);
-				// 	else
-				// 		set_led_off(DASH_BAR_END);
-				// }
+				// REMOVE later for flash saving if needed
+				if(read_tkey(&tkey_brightup))
+				{
+					fill_bar_binary(HP_BAR_END,tkey_brightup.time_loops,16,&hsv_dash);
+					fill_bar_binary(EN_BAR_END,tkey_brightup.state,8,&hsv_dash);
+					if(retrigger_tkey(&tkey_brightup))
+						set_led(DASH_BAR_END,&hsv_dash);
+					else
+						set_led_off(DASH_BAR_END);
+				}
+				else if(read_tkey(&tkey_brightdown))// testing 1 on
+				{
+					fill_bar_binary(HP_BAR_END,tkey_brightdown.time_loops,16,&hsv_dash);
+					fill_bar_binary(EN_BAR_END,tkey_brightdown.state,8,&hsv_dash);
+					if(retrigger_tkey(&tkey_brightdown))
+						set_led(DASH_BAR_END,&hsv_dash);
+					else
+						set_led_off(DASH_BAR_END);
+				}
+				else if(read(&btn_hp_p))
+				{
+					fill_bar_binary(HP_BAR_END,btn_hp_p.time_loops,16,&hsv_dash);
+					fill_bar_binary(EN_BAR_END,btn_hp_p.state,8,&hsv_dash);
+					if(retrigger(&btn_hp_p))
+						set_led(DASH_BAR_END,&hsv_dash);
+					else
+						set_led_off(DASH_BAR_END);
+				}
+				else if(read(&btn_hp_n))
+				{
+					fill_bar_binary(HP_BAR_END,btn_hp_n.time_loops,16,&hsv_dash);
+					fill_bar_binary(EN_BAR_END,btn_hp_n.state,8,&hsv_dash);
+					if(retrigger(&btn_hp_n))
+						set_led(DASH_BAR_END,&hsv_dash);
+					else
+						set_led_off(DASH_BAR_END);
+				}
+				else if(read(&btn_en_p))
+				{
+					fill_bar_binary(HP_BAR_END,btn_en_p.time_loops,16,&hsv_dash);
+					fill_bar_binary(EN_BAR_END,btn_en_p.state,8,&hsv_dash);
+					if(retrigger(&btn_en_p))
+						set_led(DASH_BAR_END,&hsv_dash);
+					else
+						set_led_off(DASH_BAR_END);
+				}
+				else if(read(&btn_en_n))
+				{
+					fill_bar_binary(HP_BAR_END,btn_en_n.time_loops,16,&hsv_dash);
+					fill_bar_binary(EN_BAR_END,btn_en_n.state,8,&hsv_dash);
+					if(retrigger(&btn_en_n))
+						set_led(DASH_BAR_END,&hsv_dash);
+					else
+						set_led_off(DASH_BAR_END);
+				}
+				else if(read(&btn_dash_p))
+				{
+					fill_bar_binary(HP_BAR_END,btn_dash_p.time_loops,16,&hsv_dash);
+					fill_bar_binary(EN_BAR_END,btn_dash_p.state,8,&hsv_dash);
+					if(retrigger(&btn_dash_p))
+						set_led(DASH_BAR_END,&hsv_dash);
+					else
+						set_led_off(DASH_BAR_END);
+				}
+				else if(read(&btn_dash_n))
+				{
+					fill_bar_binary(HP_BAR_END,btn_dash_n.time_loops,16,&hsv_dash);
+					fill_bar_binary(EN_BAR_END,btn_dash_n.state,8,&hsv_dash);
+					if(retrigger(&btn_dash_n))
+						set_led(DASH_BAR_END,&hsv_dash);
+					else
+						set_led_off(DASH_BAR_END);
+				}
 
 				break;
 			case CONFIG:
@@ -1154,13 +1232,13 @@ void main()
 				switch (current_colour_palette_enum)
 				{
 				case default_colour_palette:
-					fill_colour_palette(&default_colours,current_config_state);
+					fill_colour_palette(&default_colours,NO_CONFIG);
 					break;
 				case colour_blind_deu:
-					fill_colour_palette(&colour_blind_deu_colours,current_config_state);
+					fill_colour_palette(&colour_blind_deu_colours,NO_CONFIG);
 					break;
 				case colour_blind_tri:
-					fill_colour_palette(&colour_blind_tri_colours,current_config_state);
+					fill_colour_palette(&colour_blind_tri_colours,NO_CONFIG);
 					break;
 				case custom:
 					// health buttons to adjust hue
@@ -1178,14 +1256,14 @@ void main()
 
 
 				// up and down adjust colour palette
-				if(deactivated_tkey(&tkey_brightup))
+				if(deactivated_tkey(&tkey_brightup) && !long_held_tkey(&tkey_brightup))
 				{
 					if(current_colour_palette_enum >= MAX_COLOUR_PALETTE)
 						current_colour_palette_enum = MAX_COLOUR_PALETTE;
 					else
 						current_colour_palette_enum++;
 				}
-				if(deactivated_tkey(&tkey_brightdown))
+				if(deactivated_tkey(&tkey_brightdown) && !long_held_tkey(&tkey_brightdown))
 				{
 					if(current_colour_palette_enum <= 0)
 						current_colour_palette_enum = 0;
@@ -1208,12 +1286,35 @@ void main()
 						current_config_state--;
 				}
 				// holding both bright buttons save and exit colour
-				
-				
-				// oh need to add eeprom code to remember the colours
+				if(held_tkey(&tkey_brightup) && held_tkey(&tkey_brightdown) && !(long_held_tkey(&tkey_brightdown)))
+				{
+					// save to eeprom
+					eeprom_write_custom_colours(current_colour_palette_enum,&custom_colours);
+					// change current colours
+					switch (current_colour_palette_enum)
+					{
+					case default_colour_palette:
+						change_current_cpalette(&default_colours);
+						break;
+					case colour_blind_deu:
+						change_current_cpalette(&colour_blind_deu_colours);
+						break;
+					case colour_blind_tri:
+						change_current_cpalette(&colour_blind_tri_colours);
+						break;
+					case custom:
+						// TODO: fix why when custom colour is changed and saved and then when you renter config it shows old custom data
+						change_current_cpalette(&custom_colours);
+						
+						break;
+					default:
+						break;
+					}
+					state = RUNNING;
+				}
 
 				// testing show current_colour_palette_enum value
-				//fill_bar(HP_BAR_START,HP_BAR_START+3,current_colour_palette_enum,&hsv_health);
+				fill_bar(HP_BAR_START,HP_BAR_START+3,current_colour_palette_enum,&hsv_health);
 				break;
 			default:
 				break;
