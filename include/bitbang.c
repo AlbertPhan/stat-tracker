@@ -58,6 +58,7 @@ void bitbangWs2812( uint8_t ledCount, __xdata uint8_t * ledData )
 
         nop                 ; Tune this count by hand, want ~.4uS (1*2)
         nop
+        nop
 
         clr _LED            ; final part of bit cycle, set bit low (2)
 
@@ -71,17 +72,19 @@ void bitbangWs2812( uint8_t ledCount, __xdata uint8_t * ledData )
         inc dptr            ; and advance the counter for the next LED data value (1)
 
         mov r3, #8          ; Set up the bit loop (2)
-    00003$:                 ; red bit loop
+    00003$:                 ; green bit loop
         setb _LED           ; Begin bit cycle- set bit high (2)
 
         nop                 ; Tune this count by hand, want ~.4uS (1*2)
         nop
+        
 
         rlc A               ; Shift the LED data value left to get the high bit (1)
         mov _LED, C         ; Set the output bit high if the current bit is high, (2)
                             ; otherwise set it low
 
         nop                 ; Tune this count by hand, want ~.4uS (1*2)
+        nop
         nop
 
         clr _LED            ; final part of bit cycle, set bit low (2)
@@ -96,7 +99,7 @@ void bitbangWs2812( uint8_t ledCount, __xdata uint8_t * ledData )
         inc dptr            ; and advance the counter for the next LED data value (1)
 
         mov r3, #8          ; Set up the bit loop (2)
-    00004$:                 ; red bit loop
+    00004$:                 ; blue bit loop
         setb _LED           ; Begin bit cycle- set bit high (2)
 
         nop                 ; Tune this count by hand, want ~.4uS (1*2)
@@ -107,6 +110,7 @@ void bitbangWs2812( uint8_t ledCount, __xdata uint8_t * ledData )
                             ; otherwise set it low
 
         nop                 ; Tune this count by hand, want ~.4uS (1*2)
+        nop
         nop
 
         clr _LED            ; final part of bit cycle, set bit low (2)

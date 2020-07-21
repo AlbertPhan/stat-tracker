@@ -52,7 +52,9 @@ Modified code from https://github.com/thomasfredericks/Bounce2
 void update_button(button * btn, uint8_t current_button_state)
 {
 	// update the button
+	EA = 0; // turn off global interrupts
 	uint16_t current_btn_millis = millis();	// truncate millis() to 16 bit
+	EA = 1;
 	// Update the debounced state and if state changed 
 	// Reset states if previously changed
 	btn->state &= ~STATE_CHANGED;
@@ -107,6 +109,7 @@ void update_button(button * btn, uint8_t current_button_state)
 	{
 		btn->time_loops++;
 	}
+
 	// if button state changed
 	if(btn->state & STATE_CHANGED)
 	{
@@ -125,12 +128,23 @@ void update_button(button * btn, uint8_t current_button_state)
 
 void update_tkey(touchkey *tkey, uint16_t current_tkey_data)
 {
+	uint8_t current_tkey_state = 0;
 	// Update the button
+	EA = 0;	// turn off global interrupts
 	uint16_t current_tkey_millis = millis();	// truncate millis to 16 bit, we dont need to track long times
+	EA = 1; 
 	// Update the debounced state and if state changed 
-	// Reset states if previously changed
+	
 	tkey->data = current_tkey_data;
+	
+	// if data is larger or smaller than the no key value then tkey was presed
 
+	if((tkey->data < (tkey->nokey - TOUCH_HYSTERESIS))||(tkey->data > (tkey->nokey + TOUCH_HYSTERESIS)))
+	{
+		current_tkey_state = 1;
+	}
+	
+	// Reset states if previously changed
 	if(tkey->time_loops == 0)	// reset held long on state
 	{
 		tkey->state &= ~STATE_LONG_HELD_ON;
@@ -154,9 +168,8 @@ void update_tkey(touchkey *tkey, uint16_t current_tkey_data)
 	// Ignore everything if we are locked out
 	if(current_tkey_millis - tkey->prev_loops * LOOP_PERIOD_MS >= DEBOUNCE_TIME)
 	{
-		
-		// Compare data to when touch key was not pressed and determine if touch key was pressed
-		if ((tkey->state & DEBOUNCED_STATE) != (tkey->data < tkey->nokey - TOUCH_HYSTERESIS))
+		// Has debounced state changed?
+		if((tkey->state & DEBOUNCED_STATE)!= current_tkey_state)
 		{
 			tkey->prev_loops = current_tkey_millis/LOOP_PERIOD_MS;
 			tkey->state ^= DEBOUNCED_STATE;
@@ -204,7 +217,7 @@ void update_tkey(touchkey *tkey, uint16_t current_tkey_data)
 		tkey->time_loops = 0;
 		tkey->state &= ~STATE_HELD_ON;	
 		// tkey on?
-		if(tkey->data < tkey->nokey - TOUCH_HYSTERESIS)
+		if(current_tkey_state)
 			{
 				
 				tkey->state |= STATE_ACTIVATED;
@@ -242,7 +255,7 @@ uint8_t retrigger(button * btn)
 	return btn->state & STATE_RETRIGGER;
 }
 
-// Returns true every RETRIGGER_TIME after held time has passed and also when button was let go
+// Returns true every RETRIGGER_TIME after held time has passed or when button was let go
 uint8_t de_retrigger(button * btn)
 {
 	return btn->state & (STATE_RETRIGGER | STATE_DEACTIVATED);
@@ -268,11 +281,12 @@ uint8_t read_tkey(touchkey * tkey)
 	return tkey->state & DEBOUNCED_STATE;
 }
 
-// Returns true when button first activated and repeats periodically after held time has passed
+// Returns true every RETRIGGER_TIME after held time has passed
 uint8_t retrigger_tkey(touchkey * tkey)
 {
 	return tkey->state & STATE_RETRIGGER;
 }
+// Returns true every RETRIGGER_TIME after held time has passed or when button was let go
 uint8_t de_retrigger_tkey(touchkey * tkey)
 {
 	return tkey->state & (STATE_RETRIGGER | STATE_DEACTIVATED);
