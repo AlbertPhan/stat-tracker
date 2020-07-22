@@ -106,7 +106,7 @@ TODO:
 #define PURPLE_HUE 195
 #define PINK_HUE 225
 #define HUE_INCREMENT 5	// Amount adjusted per button press
-#define DEFAULT_BRIGHTNESS 15 // Previously 30
+#define DEFAULT_BRIGHTNESS 25 // Previously 30
 #define DEFAULT_SATURATION 255
 #define BRIGHTNESS_MAX 100	// TESTING 255 - set to 60 afterwards
 #define BRIGHTNESS_STEP 5
@@ -161,17 +161,17 @@ enum cpalette {default_colour_palette, colour_blind_deu, colour_blind_tri,custom
 __xdata enum cpalette current_colour_palette_enum = default_colour_palette;
 
 #define MAX_CONFIG_STATE 7
-enum config_state {HEALTH_ALT,HEALTH,ENERGY_ALT,ENERGY,DASH_ALT,DASH,BATT_CHARGED,BATT_LOW, NO_CONFIG};
+enum config_state {HEALTH_ALT,HEALTH,ENERGY_ALT,ENERGY,DASH_ALT,DASH,BATT_CHARGED,BATT_LOW, NO_CONFIG,BRIGHTNESS};
 
 // "EEPROM" data flash
-#define EEPROM_BUFFER_LEN 13
+#define EEPROM_BUFFER_LEN 14
 #define INIT_FLASH_BYTE 0x55
 #define EEPROM_READ_SUCCESS_INITIALIZED 1
 #define EEPROM_READ_SUCCESS_NO_INIT (1<<1)
 #define EEPROM_WRITE_SUCCESS (1<<2)
 #define EEPROM_WRITE_FAIL (1<<3)
 __xdata uint8_t eeprom_buffer[EEPROM_BUFFER_LEN];
-enum address {INIT_BYTE_ADDR,HP_ADDR,EP_ADDR,DP_ADDR,HEALTH_HUE_ADDR,HEALTH_ALT_HUE_ADDR,ENERGY_HUE_ADDR,ENERGY_ALT_HUE_ADDR,DASH_HUE_ADDR,DASH_ALT_HUE_ADDR,BATT_CHARGED_ADDR,BATT_LOW_ADDR,COLOUR_PALETTE_ADDR};
+enum address {INIT_BYTE_ADDR,HP_ADDR,EP_ADDR,DP_ADDR,HEALTH_HUE_ADDR,HEALTH_ALT_HUE_ADDR,ENERGY_HUE_ADDR,ENERGY_ALT_HUE_ADDR,DASH_HUE_ADDR,DASH_ALT_HUE_ADDR,BATT_CHARGED_ADDR,BATT_LOW_ADDR,COLOUR_PALETTE_ADDR,BRIGHTNESS_ADDR};
 __xdata uint8_t eeprom_flag = 0; // For debugging
 
 
@@ -691,6 +691,7 @@ uint8_t eeprom_write_defaults()
 	eeprom_buffer[BATT_LOW_ADDR] = RED_HUE;
 	eeprom_buffer[BATT_CHARGED_ADDR] = GREEN_HUE;
 	eeprom_buffer[COLOUR_PALETTE_ADDR] = default_colour_palette;
+	eeprom_buffer[BRIGHTNESS_ADDR] = DEFAULT_BRIGHTNESS;
 	bytes_written = WriteDataFlash(INIT_BYTE_ADDR,eeprom_buffer, EEPROM_BUFFER_LEN);
 	if(bytes_written == EEPROM_BUFFER_LEN)
 		eeprom_flag = EEPROM_WRITE_SUCCESS;	// write success // remove?
@@ -700,7 +701,6 @@ uint8_t eeprom_write_defaults()
 }
 
 // Saves current colour palette to dataflash
-// TODO: only save custom colour to eeprom, other colourblind colour data should be constant
 // returns # bytes written
 
 uint8_t eeprom_write_custom_colours(enum cpalette current_colour_palette,colour_palette * colours)
@@ -724,7 +724,7 @@ uint8_t eeprom_write_custom_colours(enum cpalette current_colour_palette,colour_
 	return bytes_written;
 }
 
-// todo: add function to write only the 3 stats
+
 uint8_t eeprom_write_stats(enum config_state stat, uint8_t value)
 {
 	uint8_t bytes_written;
@@ -739,6 +739,9 @@ uint8_t eeprom_write_stats(enum config_state stat, uint8_t value)
 		break;
 	case DASH:
 		bytes_written = WriteDataFlash(DP_ADDR,&value,1);
+		break;
+	case BRIGHTNESS:
+		bytes_written = WriteDataFlash(BRIGHTNESS_ADDR,&value,1);
 		break;
 	default:
 		break;
@@ -891,6 +894,7 @@ void main()
 			energy_value = eeprom_buffer[EP_ADDR];
 			dash_value = eeprom_buffer[DP_ADDR];
 			current_colour_palette_enum = eeprom_buffer[COLOUR_PALETTE_ADDR];
+			brightness = eeprom_buffer[BRIGHTNESS_ADDR];
 			switch (current_colour_palette_enum)
 			{
 			case default_colour_palette:
@@ -1013,6 +1017,7 @@ void main()
 					if (brightness <= BRIGHTNESS_MAX - BRIGHTNESS_STEP)
 					{
 						brightness += BRIGHTNESS_STEP;
+						eeprom_write_stats(BRIGHTNESS,brightness);
 					}
 				}
 				if((de_retrigger_tkey(&tkey_brightdown)) && !read_tkey(&tkey_brightup))
@@ -1021,6 +1026,7 @@ void main()
 					if( brightness > BRIGHTNESS_STEP)
 					{
 						brightness -= BRIGHTNESS_STEP;
+						eeprom_write_stats(BRIGHTNESS,brightness);
 					}
 				}
 				if(long_held_tkey(&tkey_brightup) && long_held_tkey(&tkey_brightdown))

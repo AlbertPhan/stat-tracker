@@ -27,3 +27,5 @@ examples/stat_tracker/stat_tracker.code-workspace
 .vscode/launch.json
 .vscode/bookmarks.json
 .vscode/bookmarks.json
+examples/ws2812/bitbang.c
+.vscode/bookmarks.json
