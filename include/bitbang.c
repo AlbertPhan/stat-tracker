@@ -3,6 +3,8 @@
 #include <ch554.h>
 #include "bitbang.h"
 
+// Timing values for WS2812-2020
+
 #define LED_PIN 2
 SBIT(LED, 0xB0, LED_PIN); // 0xB0 is PORT 3
 

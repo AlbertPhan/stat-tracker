@@ -2,6 +2,10 @@
 Displays Health, Energy, and Dash points.
 Manages buttons to increment points up and down
 
+by Albert Phan 2020
+
+http://www.pegasusprototyping.ca/stattracker
+
 TODO:
 [x] Fix main loop timing - main loop time intermittenly breaks and loops continously.
 [x] create button library to be reused in other projects
@@ -26,7 +30,7 @@ TODO:
 	[x] add eeprom save
 [] Fix slow fading not working at 3 seconds but 1 second is ok
 [] Add Startup animation
-[] Fix led showing garbage data on power on
+[x] Fix led showing garbage data on power on
 [x] Adjust flickering leds
 [x] Fix battery icon showing wrong hue - ADC related? ADC and touch inputs were damaged from ESD. Series protection resitors were added
 
@@ -43,6 +47,9 @@ TODO:
 [x] Adjust min Brightness values for fading
 [x] Adjust ADC values with new VCC of 4.28V
 [x] Fixed Battery led indicator in battery states (charging and adc)
+[x] Change how flash/fade brightness works to use an update function and to reset it.
+[x] Flash when entering config state
+
 
 
 
@@ -69,6 +76,9 @@ TODO:
 
 #endif
 
+// Uncomment for access to debug states using dash up and down buttons
+//#define DEBUG	
+
 // Averaging ADC Buffer Size
 #define AVERAGING_SIZE 10
 
@@ -84,18 +94,20 @@ TODO:
 #define DASH_BAR_LENGTH 5
 
 // ADC defines
-#define VCC_VOLTAGE 4.28	// V x 100 to avoid floats
-#define BATT_MIN_ADC ((3.20 * 255/VCC_VOLTAGE)) // ADC count for 3.2V/VCC * 255 163 
+#define VCC_VOLTAGE 4.28	// Rev 0.9 has a VCC of 5V
+#define BATT_MIN_ADC ((2.50 * 255/VCC_VOLTAGE)) // ADC count for 2.50V/VCC * 255 = 148.9
+#define BATT_3V0_ADC ((3.00 * 255/VCC_VOLTAGE))
+#define BATT_3V2_ADC ((3.20 * 255/VCC_VOLTAGE))
 #define BATT_3V3_ADC ((3.30 * 255/VCC_VOLTAGE)) // ADC count for 3.3V/VCC * 255 = 168
 #define BATT_3V9_ADC ((3.90 * 255/VCC_VOLTAGE)) // ADC count for 3.9V/VCC * 255
 #define BATT_MAX_ADC ((4.20 * 255/VCC_VOLTAGE)) // ADC count for 4.2V/VCC * 255
+#define BATT_CRITICALLY_LOW_ADC BATT_MIN_ADC	// Threshold for critically low batt icon fast flashing
+#define BATT_LOW_ADC BATT_3V2_ADC				// Threshold for low batt icon begins flashing 
 
 // Timing defines
 
 #define CHARGED_TIMEOUT_MS 300000	// Time while at constant voltage to be considered fully charged
 #define LOW_BATTERY_TIMEOUT_MS 10000	// Time below critically low battery before icon flashes
-#define RETRIGGER_PERIOD 200
-#define RETRIGGER_DELAY 500 	// Time button held down before
 
 #define RED_HUE 0
 #define ORANGE_HUE 30
@@ -108,7 +120,7 @@ TODO:
 #define HUE_INCREMENT 5	// Amount adjusted per button press
 #define DEFAULT_BRIGHTNESS 25 // Previously 30
 #define DEFAULT_SATURATION 255
-#define BRIGHTNESS_MAX 100	// TESTING 255 - set to 60 afterwards
+#define BRIGHTNESS_MAX 60	// TESTING 255 - set to 60 afterwards
 #define BRIGHTNESS_STEP 5
 #define BRIGHTNESS_MIN 5
 #define BRIGHTNESS_CRITICALLY_LOW 10
@@ -156,12 +168,12 @@ typedef struct
 }colour_palette;
 
 
-#define MAX_COLOUR_PALETTE 3
-enum cpalette {default_colour_palette, colour_blind_deu, colour_blind_tri,custom};
+#define MAX_COLOUR_PALETTE 2
+enum cpalette {default_colour_palette, colour_blind,custom};
 __xdata enum cpalette current_colour_palette_enum = default_colour_palette;
 
 #define MAX_CONFIG_STATE 7
-enum config_state {HEALTH_ALT,HEALTH,ENERGY_ALT,ENERGY,DASH_ALT,DASH,BATT_CHARGED,BATT_LOW, NO_CONFIG,BRIGHTNESS};
+enum config_state {HEALTH_ALT,HEALTH,ENERGY_ALT,ENERGY,DASH_ALT,DASH,BATT_CHARGED,BATT_LOW,NO_CONFIG,BRIGHTNESS};
 
 // "EEPROM" data flash
 #define EEPROM_BUFFER_LEN 14
@@ -221,7 +233,7 @@ __xdata uint8_t led_data[LED_COUNT*3];
 typedef struct fade
 {
 	uint8_t frames;	// total frames for fading 0 to max (fade_time/LOOP_PERIOD_MS)
-	uint8_t direction;	// 0 is down 1 is Update
+	uint8_t direction;	// 0 is down 1 is up
 	uint16_t fade_time;	// time for 0 to max in ms
 } fade;
 
@@ -384,48 +396,32 @@ uint8_t map8bit(uint8_t x, const uint8_t in_min, const uint8_t in_max, const uin
 }
 
 
-// fade() function returns a brightness value from 0 to brightness based on time passed
-// every loop all brightnesses that are fading ie charging, critically low batt, other health fading should be updated with this function
-uint8_t fade_brightness(uint8_t max_brightness, fade *fade_var)
+// get_fade_frame_brightness() function returns the  brightness value from 0 to brightness based on the current frame of fading , can also do flashing instead
+// flash_flag - 0 or 1 - 1 for flashing
+uint8_t get_fade_frame_brightness(uint8_t max_brightness, fade *fade_var,uint8_t flash_flag)
 {	
 	uint8_t return_val = 0;
-	if(fade_var->direction == 0)	// down
+	// if flash instead of fading
+	if(flash_flag)
 	{
-		
-		if(fade_var->frames == 0)
-		{
-			fade_var->direction = 1;	// go back up
-		}
-		else
-		{
-			fade_var->frames--;
-		}
+		return_val = max_brightness * fade_var->direction;
 	}
 	else
 	{
-		if(fade_var->frames >= fade_var->fade_time/LOOP_PERIOD_MS)
+		return_val = max_brightness * fade_var->frames/(fade_var->fade_time/LOOP_PERIOD_MS);
+		if(return_val < FADE_MIN_BRIGHTNESS)
 		{
-			fade_var->direction = 0;	// go back down
-		}
-		else
-		{
-			fade_var->frames++;
+			return_val = FADE_MIN_BRIGHTNESS;
 		}
 	}
-
-	return_val = max_brightness * fade_var->frames/(fade_var->fade_time/LOOP_PERIOD_MS);
-
 	// return a minimal brightness as hue changes dramatically at low brightness values
-	if(return_val < FADE_MIN_BRIGHTNESS)
-		return FADE_MIN_BRIGHTNESS;
-	else
-		return return_val;
+	return return_val;
 }
 
-// flash - similiar to fade but just flashes on or off.
-// uses the direction variable for on and off
-uint8_t flash_brightness(uint8_t max_brightness, fade *fade_var)
-{	
+//update_fade_animation() function updates the fade animation frames each main loop
+// every loop all brightnesses that are fading ie charging, critically low batt, other health fading should be updated with this function
+void update_fade_animation(uint8_t max_brightness, fade *fade_var)
+{
 	if(fade_var->direction == 0)	// down
 	{
 		
@@ -449,76 +445,90 @@ uint8_t flash_brightness(uint8_t max_brightness, fade *fade_var)
 			fade_var->frames++;
 		}
 	}
-	return max_brightness * fade_var->direction;
+}
+
+// start_fade_animation() resets the animation to the first frame (OFF for flashing)
+void start_fade_animation(uint8_t max_brightness, fade *fade_var)
+{
+	fade_var->direction = 0;
+	// sets frames to the max amount
+	fade_var->frames = fade_var->fade_time/LOOP_PERIOD_MS;
+}
+
+// start_flash_animation() resets the animation to the last frame (ON for flashing)
+void start_flash_animation(uint8_t max_brightness, fade *fade_var)
+{
+	fade_var->direction = 1;
+
+	fade_var->frames = 0;
 }
 
 // Fill entire tracker with the configuration colour palette and flash current value being edited.
-void fill_colour_palette(colour_palette * colours, uint8_t config_mode)
+void fill_colour_palette(colour_palette * colours, enum config_state config_mode)
 {
-	HsvColor hsv = {0,DEFAULT_SATURATION,DEFAULT_BRIGHTNESS};
+	HsvColor hsv = {0,DEFAULT_SATURATION,brightness};
 
 	// Health alt colour leds 1-10
 	hsv.h = colours->health_alt_hue;
-	if(config_mode == HEALTH_ALT)
-		hsv.v = flash_brightness(DEFAULT_BRIGHTNESS, &fade_battery_fast);
+	if(config_mode == HEALTH_ALT || config_mode == NO_CONFIG)
+		hsv.v = get_fade_frame_brightness(brightness, &fade_battery,1);
 	else
-		hsv.v = DEFAULT_BRIGHTNESS;
+		hsv.v = brightness;
 	
 	fill_bar(HP_BAR_START,HP_BAR_START+10,255,&hsv);
 	// Health colour leds 11-20
 	hsv.h = colours->health_hue;
-	if(config_mode == HEALTH)
-		hsv.v = flash_brightness(DEFAULT_BRIGHTNESS, &fade_battery_fast);	
+	if(config_mode == HEALTH || config_mode == NO_CONFIG)
+		hsv.v = get_fade_frame_brightness(brightness, &fade_battery,1);	
 	else
-		hsv.v = DEFAULT_BRIGHTNESS;
+		hsv.v = brightness;
 	fill_bar(HP_BAR_START+10,HP_BAR_END,255,&hsv);
 	// energy alt colour leds 21-30
 	hsv.h = colours->energy_alt_hue;
-	if(config_mode == ENERGY_ALT)
-		hsv.v = flash_brightness(DEFAULT_BRIGHTNESS, &fade_battery_fast);
+	if(config_mode == ENERGY_ALT || config_mode == NO_CONFIG)
+		hsv.v = get_fade_frame_brightness(brightness, &fade_battery,1);
 	else
-		hsv.v = DEFAULT_BRIGHTNESS;
+		hsv.v = brightness;
 	fill_bar(EN_BAR_START,EN_BAR_START+10,255,&hsv);
 	// energy colour leds 31-40
 	hsv.h = colours->energy_hue;
-	if(config_mode == ENERGY)
-		hsv.v = flash_brightness(DEFAULT_BRIGHTNESS, &fade_battery_fast);
+	if(config_mode == ENERGY || config_mode == NO_CONFIG)
+		hsv.v = get_fade_frame_brightness(brightness, &fade_battery,1);
 	else
-		hsv.v = DEFAULT_BRIGHTNESS;
+		hsv.v = brightness;
 	fill_bar(EN_BAR_START+10,EN_BAR_END,255,&hsv);
 	// dash alt colour leds 41-43
 	hsv.h = colours->dash_alt_hue;
-	if(config_mode == DASH_ALT)
-		hsv.v = flash_brightness(DEFAULT_BRIGHTNESS, &fade_battery_fast);
+	if(config_mode == DASH_ALT || config_mode == NO_CONFIG)
+		hsv.v = get_fade_frame_brightness(brightness, &fade_battery,1);
 	else
-		hsv.v = DEFAULT_BRIGHTNESS;
+		hsv.v = brightness;
 	fill_bar(DASH_BAR_START,DASH_BAR_START+2,255,&hsv);
 	// dash colour leds 44-45
 	hsv.h = colours->dash_hue;
-	if(config_mode == DASH)
-		hsv.v = flash_brightness(DEFAULT_BRIGHTNESS, &fade_battery_fast);
+	if(config_mode == DASH || config_mode == NO_CONFIG)
+		hsv.v = get_fade_frame_brightness(brightness, &fade_battery,1);
 	else
-		hsv.v = DEFAULT_BRIGHTNESS;
+		hsv.v = brightness;
 	fill_bar(DASH_BAR_START+2,DASH_BAR_END,255,&hsv);
 
 	// charged batt colour
 	if(config_mode == BATT_CHARGED)
 	{
 		hsv.h = colours->batt_charged_hue;
-		hsv.v = flash_brightness(DEFAULT_BRIGHTNESS, &fade_battery_fast);
+		hsv.v = get_fade_frame_brightness(brightness, &fade_battery,1);
 	}
 	else if(config_mode == BATT_LOW)
 	{
 		hsv.h = colours->batt_low_hue;
-		hsv.v = flash_brightness(DEFAULT_BRIGHTNESS, &fade_very_fast);
+		hsv.v = get_fade_frame_brightness(brightness, &fade_very_fast,1);
 	}	
 	else
-		hsv.v = DEFAULT_BRIGHTNESS;
+		hsv.v = brightness;
 	
 	// fade between batt charged and low colours when not in config
 	if((config_mode != BATT_CHARGED) && (config_mode != BATT_LOW))
 	{
-		fade_brightness(DEFAULT_BRIGHTNESS,&fade_slow); // called just to update the fade animation
 		hsv.h = map8bit(fade_slow.frames,0,fade_slow.fade_time/LOOP_PERIOD_MS,colours->batt_low_hue,colours->batt_charged_hue);
 	}
 	set_led(PWR_LED,&hsv);
@@ -621,7 +631,7 @@ void change_current_cpalette(colour_palette * colours)
 void update_battery_icon_led(const uint8_t batt_charge_adc)
 {
 	__xdata static uint32_t batt_millis = 0; // Used for charging timing
-	__xdata static uint8_t batt_charge_adc_flag = BATT_3V3_ADC + 1;	
+	__xdata static uint8_t batt_charge_adc_flag = BATT_LOW_ADC + 1;	
 	__xdata static uint8_t batt_constantvoltage_flag = 0;
 
 	hsv_batt_icon.v = brightness;
@@ -629,9 +639,9 @@ void update_battery_icon_led(const uint8_t batt_charge_adc)
 	// Do stuff while battery is charging
 	if(STAT == 0)	// If charging 
 	{
-		if(batt_charge_adc_flag != BATT_3V3_ADC + 1)
+		if(batt_charge_adc_flag != BATT_LOW_ADC + 1)
 		{
-				batt_charge_adc_flag = BATT_3V3_ADC + 1;	// Reset flag
+				batt_charge_adc_flag = BATT_LOW_ADC + 1;	// Reset flag
 				flag_low_batt = 0;
 		}
 		// If charger is in constant voltage mode, enable flag and start timing
@@ -644,11 +654,11 @@ void update_battery_icon_led(const uint8_t batt_charge_adc)
 			// reset timer
 			batt_millis = 0;
 
-		// if charging has NOT been in constant voltage mode for CHARGED_TIMEOUT_MS then fade batt icon
+		// if charging has NOT been in constant voltage mode for CHARGED_TIMEOUT_MS then flash batt icon
 		if(batt_millis < CHARGED_TIMEOUT_MS)
 		{
-			// fade charging icon - TODO: add code to start animation when charging begins
-			hsv_batt_icon.v = fade_brightness(brightness,&fade_battery);
+			// flash charging icon
+			hsv_batt_icon.v = get_fade_frame_brightness(brightness,&fade_battery,1);
 		}
 	}
 	else // Not charging
@@ -659,17 +669,17 @@ void update_battery_icon_led(const uint8_t batt_charge_adc)
 			batt_charge_adc_flag = batt_charge_adc;	// Only allow adc flag to go lower (To stop noisy adc from triggering fading states)
 		}
 
-		if (batt_charge_adc_flag <= BATT_3V3_ADC)	// if less than 3.3v display critically low state
+		if (batt_charge_adc_flag <= BATT_LOW_ADC)	// if less than Batt low adc display critically low state
 		{
-			// fade brightness and fade faster based on battery
+			// lower brightness and flash faster based on battery level
 			flag_low_batt = 1; 
-			brightness = map(batt_charge_adc_flag, BATT_MIN_ADC, BATT_3V3_ADC, BRIGHTNESS_MIN,BRIGHTNESS_CRITICALLY_LOW);
-			fade_battery_fast.fade_time = map(batt_charge_adc_flag, BATT_MIN_ADC, BATT_3V3_ADC,BATTERY_FADE_PERIOD_MS/4,BATTERY_FADE_PERIOD_MS);
-			hsv_batt_icon.v = fade_brightness(brightness, &fade_battery_fast);
+			brightness = map(batt_charge_adc_flag, BATT_CRITICALLY_LOW_ADC, BATT_LOW_ADC, BRIGHTNESS_MIN,BRIGHTNESS_CRITICALLY_LOW);
+			fade_battery_fast.fade_time = map(batt_charge_adc_flag, BATT_CRITICALLY_LOW_ADC, BATT_LOW_ADC,BATTERY_FADE_PERIOD_MS/4,BATTERY_FADE_PERIOD_MS);
+			hsv_batt_icon.v = get_fade_frame_brightness(brightness, &fade_battery_fast,1);
 		}
 	}
 	// Show battery charge from fully charged colour to low colour
-	hsv_batt_icon.h = map(batt_charge_adc,BATT_MIN_ADC,BATT_MAX_ADC,batt_low_hue,batt_charged_hue);
+	hsv_batt_icon.h = map(batt_charge_adc,BATT_3V0_ADC,BATT_MAX_ADC,batt_low_hue,batt_charged_hue);
 	set_led(PWR_LED, &hsv_batt_icon);
 }
 
@@ -784,26 +794,15 @@ void main()
 	
 
 	// Colour blind deu colours
-	__xdata colour_palette colour_blind_deu_colours;
-	colour_blind_deu_colours.health_hue = BLUE_HUE;
-	colour_blind_deu_colours.health_alt_hue = TEAL_HUE;
-	colour_blind_deu_colours.energy_hue = RED_HUE;
-	colour_blind_deu_colours.energy_alt_hue = YELLOW_HUE;
-	colour_blind_deu_colours.dash_hue = BLUE_HUE;
-	colour_blind_deu_colours.dash_alt_hue = TEAL_HUE;
-	colour_blind_deu_colours.batt_charged_hue = BLUE_HUE;
-	colour_blind_deu_colours.batt_low_hue = RED_HUE;
-
-	// REMOVE: is tri needed?
-	__xdata colour_palette colour_blind_tri_colours;
-	colour_blind_tri_colours.health_hue = BLUE_HUE;
-	colour_blind_tri_colours.health_alt_hue = TEAL_HUE;
-	colour_blind_tri_colours.energy_hue = RED_HUE;
-	colour_blind_tri_colours.energy_alt_hue = YELLOW_HUE;
-	colour_blind_tri_colours.dash_hue = BLUE_HUE;
-	colour_blind_tri_colours.dash_alt_hue = TEAL_HUE;
-	colour_blind_tri_colours.batt_charged_hue = BLUE_HUE;
-	colour_blind_tri_colours.batt_low_hue = RED_HUE;
+	__xdata colour_palette colour_blind_colours;
+	colour_blind_colours.health_hue = BLUE_HUE;
+	colour_blind_colours.health_alt_hue = TEAL_HUE;
+	colour_blind_colours.energy_hue = RED_HUE;
+	colour_blind_colours.energy_alt_hue = YELLOW_HUE;
+	colour_blind_colours.dash_hue = BLUE_HUE;
+	colour_blind_colours.dash_alt_hue = TEAL_HUE;
+	colour_blind_colours.batt_charged_hue = BLUE_HUE;
+	colour_blind_colours.batt_low_hue = RED_HUE;
 
 	__xdata colour_palette custom_colours;
 	custom_colours.health_hue = GREEN_HUE;
@@ -900,11 +899,8 @@ void main()
 			case default_colour_palette:
 				change_current_cpalette(&default_colours);
 				break;
-			case colour_blind_deu:
-				change_current_cpalette(&colour_blind_deu_colours);
-				break;
-			case colour_blind_tri:
-				change_current_cpalette(&colour_blind_tri_colours);
+			case colour_blind:
+				change_current_cpalette(&colour_blind_colours);
 				break;
 			case custom:
 				// get custom colour data
@@ -973,7 +969,11 @@ void main()
 				prev_millis += LOOP_PERIOD_MS;
 
 			update_buttons(); 
-			
+			update_fade_animation(brightness,&fade_battery);
+			update_fade_animation(brightness,&fade_battery_fast);
+			update_fade_animation(brightness,&fade_very_fast);
+			update_fade_animation(brightness,&fade_slow);
+
 			// ADC Loop
 			// Start battery voltage adc stuff
 			ADC_START = 1;	// Start ADC conversion
@@ -998,6 +998,8 @@ void main()
 			// Divide by AVERAGING_SIZE to get average
 			battery_charge_adc = battery_charge_adc/AVERAGING_SIZE;
 
+			
+
 			#ifdef USB_ENABLE
 			UsbCdc_processOutput();
 			UsbCdc_processInput();
@@ -1009,7 +1011,7 @@ void main()
 
 
 			// Brightness button controls
-			if(!flag_low_batt && !(state == BUTTON) && !(state == CONFIG))
+			if(!flag_low_batt && !(state == BUTTON))
 			{
 				if(de_retrigger_tkey(&tkey_brightup) && !read_tkey(&tkey_brightdown))
 				{
@@ -1029,16 +1031,19 @@ void main()
 						eeprom_write_stats(BRIGHTNESS,brightness);
 					}
 				}
-				if(long_held_tkey(&tkey_brightup) && long_held_tkey(&tkey_brightdown))
-				{
-					state = CONFIG;
-					current_config_state = 0;
-				}
+			}
+			if(long_held_tkey(&tkey_brightup) && long_held_tkey(&tkey_brightdown))
+			{
+				state = CONFIG;
+				current_config_state = 0;
+				// Begin with off leds to show config mode has been entered.
+				//start_fade_animation(brightness, &fade_battery);
 			}
 
 			// Goes to charging status when charging detected
 			if(activated(&btn_charging)) // if charging
 			{
+				start_fade_animation(brightness,&fade_battery);
 				state = BATTERY_CHARGE;
 			}
 			// Return to RUNNING state after charging ends or if button press detected
@@ -1052,7 +1057,7 @@ void main()
 			
 
 			// TESTING - goes to boot loader when both tkey buttons pressed
-			if(held_tkey(&tkey_brightdown) && activated_tkey(&tkey_brightup) || held(&btn_dash_n) && held(&btn_hp_n))
+			if(held(&btn_dash_n) && held(&btn_hp_n))
 			{
 				// Turn off WS2812's before starting bootloader
 				for (i = 0; i < LED_COUNT*3; i++)
@@ -1085,6 +1090,9 @@ void main()
 			hsv.v = brightness;
 
 			// TESTING using dash buttons to switch between states
+
+			#ifdef DEBUG
+
 			if(state != CONFIG)
 			{
 				if(de_retrigger(&btn_dash_p))
@@ -1102,6 +1110,7 @@ void main()
 					}
 				}
 			}
+			#endif
 			// Adjust stats in RUNNING state
 			if(state == RUNNING)
 			{
@@ -1145,19 +1154,24 @@ void main()
 			}
 
 			clear_display();
+
+			// Update and fill battery icon
+			if(state != CONFIG)
+				update_battery_icon_led(battery_charge_adc);
+
 			switch (state)
 			{
 			case BATTERY_CHARGE:
 				// Show battery charge for user
 				// Fade battery charge using leds 1-20 to represent charge using batt icon colour
-				fill_bar(HP_BAR_START, HP_BAR_END, map8bit(battery_charge_adc,BATT_MIN_ADC,BATT_MAX_ADC,0,FULL_BAR_LENGTH), &hsv_batt_icon);
+				fill_bar(HP_BAR_START, HP_BAR_END, map8bit(battery_charge_adc,BATT_CRITICALLY_LOW_ADC,BATT_MAX_ADC,0,FULL_BAR_LENGTH), &hsv_batt_icon);
 				break;
 
 			case BATTERY_ADC:
 				// fill bar based on battery charge for now while testing
 				hsv.h = hsv_health.h;
 				hsv.s = DEFAULT_SATURATION;
-				fill_bar(HP_BAR_START, HP_BAR_END, map8bit(battery_charge_adc,BATT_MIN_ADC,BATT_MAX_ADC,0,FULL_BAR_LENGTH), &hsv);
+				fill_bar(HP_BAR_START, HP_BAR_END, map8bit(battery_charge_adc,BATT_CRITICALLY_LOW_ADC,BATT_MAX_ADC,0,FULL_BAR_LENGTH), &hsv);
 				hsv.h = hsv_health.h + 10;
 				fill_bar_binary(EN_BAR_END,battery_charge_adc,8,&hsv);
 				if(STAT == 0)
@@ -1333,18 +1347,22 @@ void main()
 				case default_colour_palette:
 					fill_colour_palette(&default_colours,NO_CONFIG);
 					break;
-				case colour_blind_deu:
-					fill_colour_palette(&colour_blind_deu_colours,NO_CONFIG);
-					break;
-				case colour_blind_tri:
-					fill_colour_palette(&colour_blind_tri_colours,NO_CONFIG);
+				case colour_blind:
+					fill_colour_palette(&colour_blind_colours,NO_CONFIG);
 					break;
 				case custom:
 					// health buttons to adjust hue
 					if(de_retrigger(&btn_hp_p))
+					{
 						adjust_colour_palette(&custom_colours,current_config_state,1);
+						start_flash_animation(brightness,&fade_battery);
+					}
+						
 					if(de_retrigger(&btn_hp_n))
+					{
 						adjust_colour_palette(&custom_colours,current_config_state,0);
+						start_flash_animation(brightness,&fade_battery);
+					}
 					fill_colour_palette(&custom_colours,current_config_state);
 					break;
 				default:
@@ -1357,14 +1375,21 @@ void main()
 					if(current_colour_palette_enum >= MAX_COLOUR_PALETTE)
 						current_colour_palette_enum = MAX_COLOUR_PALETTE;
 					else
-						current_colour_palette_enum++;
+					{
+							current_colour_palette_enum++;
+							start_fade_animation(brightness, &fade_battery);
+					}
+					
 				}
 				if(deactivated(&btn_dash_n))
 				{
 					if(current_colour_palette_enum <= 0)
 						current_colour_palette_enum = 0;
 					else
+					{
 						current_colour_palette_enum--;
+						start_fade_animation(brightness, &fade_battery);
+					}
 				}
 				// dash + and - move which colour to be edited (flashing the color)
                 if(activated(&btn_en_p))
@@ -1373,6 +1398,7 @@ void main()
                         current_config_state = MAX_CONFIG_STATE;
 					else
 						current_config_state++;
+					start_fade_animation(brightness, &fade_battery);
                 }
 				if(activated(&btn_en_n))
 				{
@@ -1380,6 +1406,7 @@ void main()
 						current_config_state = 0;
 					else
 						current_config_state--;
+					start_fade_animation(brightness, &fade_battery);
 				}
 				// holding both bright buttons save and exit colour
 				if(held_tkey(&tkey_brightup) && held_tkey(&tkey_brightdown) && !(long_held_tkey(&tkey_brightdown)))
@@ -1392,11 +1419,8 @@ void main()
 					case default_colour_palette:
 						change_current_cpalette(&default_colours);
 						break;
-					case colour_blind_deu:
-						change_current_cpalette(&colour_blind_deu_colours);
-						break;
-					case colour_blind_tri:
-						change_current_cpalette(&colour_blind_tri_colours);
+					case colour_blind:
+						change_current_cpalette(&colour_blind_colours);
 						break;
 					case custom:
 						change_current_cpalette(&custom_colours);
@@ -1415,9 +1439,7 @@ void main()
 			}
 			
 			
-			// Update battery icon
-			if(state != CONFIG)
-				update_battery_icon_led(battery_charge_adc);
+			
 			// Display led_data
 			EA = 0; // Disable global interrupts
 			bitbangWs2812(LED_COUNT, led_data);
@@ -1451,29 +1473,7 @@ void main()
 				while(1);	// loop forever during error and look at data
 
 			}
-				
-
-			#ifndef USB_ENABLE
-			if (BOOT == 1) // cant use BOOT_PB with usb cdc
-				break;
-			#endif
 		}	// end main logic loop
 		timing_millis = millis() - prev_timing_millis; // TESTING timing
     }	// end while
-	
-	// Turn off WS2812's before starting bootloader
-	clear_display();
-	
-	// Light the power LED to indicate boot mode
-	set_led(PWR_LED, &hsv_boot);
-
-
-	EA = 0;	// Disable global interrupts while bitbanging
-	bitbangWs2812(LED_COUNT, led_data);
-	
-
-	mDelaymS(100); // delay for bootloader
-	bootloader();
-	while(1);
-	
 }
