@@ -4,8 +4,8 @@ Date 4/20/2020
 Albert Phan
 
 TODO:
-[] update button to do long held as well like tkey button is done
-[] find out if we can use only 8 bits for some of the timings
+[x] update button to do long held as well like tkey button is done
+[x] find out if we can use only 8 bits for some of the timings
 
 
 This code gives certain button states such as activated/deactivated/held/long_held/retrigger/de_retrigger. A timer library with millis() function is required.

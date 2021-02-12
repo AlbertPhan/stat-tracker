@@ -29,7 +29,7 @@ TODO:
 	[x] Create function to show colour palettes using colour palette type struct
 	[x] add eeprom save
 [] Fix slow fading not working at 3 seconds but 1 second is ok
-[] Add Startup animation
+[x] Add Startup animation
 [x] Fix led showing garbage data on power on
 [x] Adjust flickering leds
 [x] Fix battery icon showing wrong hue - ADC related? ADC and touch inputs were damaged from ESD. Series protection resitors were added
@@ -49,6 +49,7 @@ TODO:
 [x] Fixed Battery led indicator in battery states (charging and adc)
 [x] Change how flash/fade brightness works to use an update function and to reset it.
 [x] Flash when entering config state
+[] If needing RAM space, change the 32 bit timers to loop counters so it doesnt take up so much ram.
 
 
 
@@ -56,6 +57,8 @@ TODO:
 */
 
 //#define USB_ENABLE
+
+#define bitbang(led_count,led_data)	bitbangSk6812_2020(led_count, led_data)	// choosing correct led (see bitbang.h)
 
 #include <stdint.h>
 #include <ch554.h>
@@ -108,6 +111,7 @@ TODO:
 
 #define CHARGED_TIMEOUT_MS 300000	// Time while at constant voltage to be considered fully charged
 #define LOW_BATTERY_TIMEOUT_MS 10000	// Time below critically low battery before icon flashes
+#define STARTUP_ANIMATION_INTERVAL 25	// Time between led increments for startup animation
 
 #define RED_HUE 0
 #define ORANGE_HUE 30
@@ -186,7 +190,8 @@ __xdata uint8_t eeprom_buffer[EEPROM_BUFFER_LEN];
 enum address {INIT_BYTE_ADDR,HP_ADDR,EP_ADDR,DP_ADDR,HEALTH_HUE_ADDR,HEALTH_ALT_HUE_ADDR,ENERGY_HUE_ADDR,ENERGY_ALT_HUE_ADDR,DASH_HUE_ADDR,DASH_ALT_HUE_ADDR,BATT_CHARGED_ADDR,BATT_LOW_ADDR,COLOUR_PALETTE_ADDR,BRIGHTNESS_ADDR};
 __xdata uint8_t eeprom_flag = 0; // For debugging
 
-
+#define LED_PIN 2	// addressable led data pin
+SBIT(LED, PORT3, LED_PIN); // LED is used in bitbang.c
 #define PIN_STAT 4		// STATUS from lipo charger P3.4
 SBIT(STAT, PORT3, PIN_STAT);
 #define BOOT_PB 6		// BOOT Pushbutton on P3.6
@@ -211,7 +216,7 @@ SBIT(DASH_BTN, PORT3, PIN_DASH_BTN);
 #define LED_COUNT (46)
 
 // States
-#define MAX_STATES 10
+#define MAX_STATES 11
 #define BATTERY_CHARGE 1
 #define BATTERY_ADC 2	
 #define RUNNING 3
@@ -222,6 +227,7 @@ SBIT(DASH_BTN, PORT3, PIN_DASH_BTN);
 #define LOOP 8
 #define BUTTON 9
 #define CONFIG 10
+#define STARTUP_ANIMATION 11
 
 __xdata uint8_t led_data[LED_COUNT*3];
 
@@ -756,7 +762,11 @@ uint8_t eeprom_write_stats(enum config_state stat, uint8_t value)
 	default:
 		break;
 	}
-	
+	if(bytes_written == 1)
+		eeprom_flag = EEPROM_WRITE_SUCCESS;	// write success // remove?
+	else
+		eeprom_flag = EEPROM_WRITE_FAIL; // failed write
+	return bytes_written;
 }
 
 
@@ -766,43 +776,48 @@ void main()
 	__xdata uint8_t hp_value = DEFAULT_HP;
 	__xdata uint8_t energy_value = DEFAULT_EP;
 	__xdata uint8_t dash_value = DEFAULT_DP;
-	__xdata uint8_t state = RUNNING;	// Default State
+	__xdata uint8_t startup_hp_value = 0;		// Used for Startup animation
+	__xdata uint8_t startup_energy_value = 0;	// Used for Startup animation
+	__xdata uint8_t startup_dash_value = 0;		// Used for Startup animation
+	__xdata uint8_t state = STARTUP_ANIMATION;	// Default State
 	__xdata uint16_t battery_charge_adc = 0; // from 0 - 255 and also used for summing (need 16 bits)
 	__xdata uint8_t buffer_index = 0;
-	__xdata uint16_t i;	// General Purpose index
+	//__xdata uint16_t i;	// General Purpose index
 	__xdata uint32_t prev_millis = 0; // used for main loop
-	__xdata uint32_t prev_timing_millis = 0;
-	__xdata uint32_t timing_millis = 0;
-	__idata uint32_t current_millis = 0;	// TESTING
+	__xdata uint32_t prev_startup_millis = 0; // used for startup animation
+	__idata uint32_t current_millis = 0;
 	__xdata uint8_t battery_adc_buffer[AVERAGING_SIZE];
 	__xdata HsvColor hsv = {0,DEFAULT_SATURATION,DEFAULT_BRIGHTNESS};	// General Purpose hsv
-	__xdata uint8_t errorFlag = 0;	// TESTING 
 	
 	__xdata static enum config_state current_config_state = HEALTH_ALT;
 	// Colour palettes - must define here inside main()
 
-	// TODO: make const if not changing
-	__xdata colour_palette default_colours;
-	default_colours.health_hue = DEFAULT_HEALTH_HUE;
-	default_colours.health_alt_hue = DEFAULT_HEALTH_ALT_HUE;
-	default_colours.energy_hue = DEFAULT_ENERGY_HUE;
-	default_colours.energy_alt_hue = DEFAULT_ENERGY_ALT_HUE;
-	default_colours.dash_hue = DEFAULT_DASH_HUE;
-	default_colours.dash_alt_hue = DEFAULT_DASH_ALT_HUE;
-	default_colours.batt_charged_hue = DEFAULT_BATT_CHARGED_HUE;
-	default_colours.batt_low_hue = DEFAULT_BATT_LOW_HUE;
-	
+	// Default Colours
+	__xdata const colour_palette default_colours =
+	{
+		.health_hue = DEFAULT_HEALTH_HUE,
+		.health_alt_hue = DEFAULT_HEALTH_ALT_HUE,
+		.energy_hue = DEFAULT_ENERGY_HUE,
+		.energy_alt_hue = DEFAULT_ENERGY_ALT_HUE,
+		.dash_hue = DEFAULT_DASH_HUE,
+		.dash_alt_hue = DEFAULT_DASH_ALT_HUE,
+		.batt_charged_hue = DEFAULT_BATT_CHARGED_HUE,
+		.batt_low_hue = DEFAULT_BATT_LOW_HUE
+	};
 
 	// Colour blind deu colours
-	__xdata colour_palette colour_blind_colours;
-	colour_blind_colours.health_hue = BLUE_HUE;
-	colour_blind_colours.health_alt_hue = TEAL_HUE;
-	colour_blind_colours.energy_hue = RED_HUE;
-	colour_blind_colours.energy_alt_hue = YELLOW_HUE;
-	colour_blind_colours.dash_hue = BLUE_HUE;
-	colour_blind_colours.dash_alt_hue = TEAL_HUE;
-	colour_blind_colours.batt_charged_hue = BLUE_HUE;
-	colour_blind_colours.batt_low_hue = RED_HUE;
+	__xdata const colour_palette colour_blind_colours =
+	{
+		.health_hue = BLUE_HUE,
+		.health_alt_hue = TEAL_HUE,
+		.energy_hue = RED_HUE,
+		.energy_alt_hue = YELLOW_HUE,
+		.dash_hue = BLUE_HUE,
+		.dash_alt_hue = TEAL_HUE,
+		.batt_charged_hue = BLUE_HUE,
+		.batt_low_hue = RED_HUE
+	};
+
 
 	__xdata colour_palette custom_colours;
 	custom_colours.health_hue = GREEN_HUE;
@@ -815,8 +830,7 @@ void main()
 	custom_colours.batt_low_hue = RED_HUE;
 
 	CfgFsys();
-	bitbangSetup(); // ws2812 pin is setup here
-    bitbangWs2812(LED_COUNT, led_data); // TESTING Blank out all leds to get rid of garbage data (not working)
+	bitbangSetup(3,LED_PIN); // using 3.2 pin as led pin
 	mDelaymS(5);
 
 	// GPIO Setup *****************************
@@ -873,14 +887,16 @@ void main()
 	tkey_brightdown.nokey = getNokeyData(BRIGHTNESS_DOWN_TOUCHKEY_NUM);	// set no key threshold
 
 	// Initialize the adc buffer array with AVERAGING_SIZE good samples
-	for(i = 0; i< AVERAGING_SIZE; i++)
+	for(uint8_t i = 0; i< AVERAGING_SIZE; i++)
 	{
 		ADC_START = 1;	// Start ADC conversion
 		while(ADC_START == 1); // Wait for conversion done
 		battery_adc_buffer[i] = ADC_DATA;// add to averaging Buffer
 	}
 	EA = 0; // disable global interrupts
-	prev_millis = millis(); // set before going into loop
+	current_millis = millis();
+	prev_millis = current_millis; // set before going into loop
+	prev_startup_millis = current_millis;
 	EA = 1;	// enable global interrupts
 
 	// EEPROM setup
@@ -942,9 +958,34 @@ void main()
 		EA = 0; // disable global interrupts
 		current_millis = millis();
 		EA = 1; // enable global interrupts
-		// (prev_millis < current_millis) && 
+
+		// Startup Animation Timing
+		// Interval passed? increase displayed value if in startup_animation
+		if(current_millis-prev_startup_millis >= STARTUP_ANIMATION_INTERVAL)
+		{
+			prev_startup_millis += STARTUP_ANIMATION_INTERVAL;
+
+			if(state == STARTUP_ANIMATION)
+			{
+				// Increment data values as long as they are not at max
+				if(startup_hp_value < hp_value)
+				{
+					startup_hp_value++;
+				}
+				if(startup_energy_value < energy_value)
+				{
+					startup_energy_value++;
+				}
+				if(startup_dash_value < dash_value)
+				{
+					startup_dash_value++;
+				}
+			}
+		}
+
 		if(current_millis-prev_millis >= LOOP_PERIOD_MS)
 		{
+			prev_millis += LOOP_PERIOD_MS;
 			#ifdef USB_ENABLE 
 			UsbCdc_puts("prev_millis:");	// TESTING
 			UsbCdc_puti32(prev_millis);
@@ -956,17 +997,6 @@ void main()
 			UsbCdc_puti32(timing_millis);
 			UsbCdc_puts("\r\n");
 			#endif
-
-			prev_timing_millis = current_millis;	// TESTING timing check
-
-			if(prev_millis > current_millis) // TESTING prev_millis should not be larger than current_millis at this point
-			{
-				errorFlag = 1;
-			}
-			// else if(current_millis - prev_millis >= 2 * LOOP_PERIOD_MS) // it if ever goes out of sync by more than 2 periods
-			// 	errorFlag = 2;
-			else // Normal - no errors
-				prev_millis += LOOP_PERIOD_MS;
 
 			update_buttons(); 
 			update_fade_animation(brightness,&fade_battery);
@@ -990,7 +1020,7 @@ void main()
 			
 			// Start Averaging math	
 			battery_charge_adc = 0; // reset battery_charge_adc
-			for(i = 0; i < AVERAGING_SIZE; i++)
+			for(uint8_t i = 0; i < AVERAGING_SIZE; i++)
 			{
 				// Add all values in buffer
 				battery_charge_adc += battery_adc_buffer[i];
@@ -1046,31 +1076,28 @@ void main()
 				start_fade_animation(brightness,&fade_battery);
 				state = BATTERY_CHARGE;
 			}
-			// Return to RUNNING state after charging ends or if button press detected
+			// Return to STARTUP_ANIMATION state after charging ends or if button press detected
 			if(state == BATTERY_CHARGE)
 			{
 				if(deactivated(&btn_charging) || activated(&btn_dash_n)||activated(&btn_dash_p)||activated(&btn_en_n)||activated(&btn_en_p)||activated(&btn_hp_n)||activated(&btn_hp_p))
 				{
-					state = RUNNING;
+					state = STARTUP_ANIMATION;
 				}
 			}
 			
 
-			// TESTING - goes to boot loader when both tkey buttons pressed
+			// Goes to boot loader when both dash n and hp n buttons held
 			if(held(&btn_dash_n) && held(&btn_hp_n))
 			{
 				// Turn off WS2812's before starting bootloader
-				for (i = 0; i < LED_COUNT*3; i++)
+				for (uint8_t i = 0; i < LED_COUNT*3; i++)
 					led_data[i] = 0;
 				
 				// Light the power LED to indicate boot mode
 				set_led(PWR_LED, &hsv_boot);
 
-
-				EA = 0;	// Disable global interrupts while bitbanging
-				bitbangWs2812(LED_COUNT, led_data);
+				bitbang(LED_COUNT, led_data);
 				
-
 				mDelaymS(100); // delay for bootloader
 				#ifdef USB_ENABLE
 				jumpToBootloader(); // usb cdc bootloader
@@ -1089,10 +1116,10 @@ void main()
 			hsv_boot.v = brightness;
 			hsv.v = brightness;
 
-			// TESTING using dash buttons to switch between states
+			
 
 			#ifdef DEBUG
-
+			// DEBUG using dash buttons to switch between states
 			if(state != CONFIG)
 			{
 				if(de_retrigger(&btn_dash_p))
@@ -1198,7 +1225,7 @@ void main()
 				break;
 			case COLOUR_PALETTE:	// Demo of all the hues - Increments of 5
 				hsv.v = brightness;
-				for(i = 0; i < LED_COUNT; i++)
+				for(uint8_t i = 0; i < LED_COUNT; i++)
 				{
 					// go through leds and change hsv for each
 					hsv.h = 5*i;
@@ -1428,11 +1455,35 @@ void main()
 					default:
 						break;
 					}
-					state = RUNNING;
+					state = STARTUP_ANIMATION;
 				}
 
 				// testing show current_colour_palette_enum value
 				//fill_bar(HP_BAR_START,HP_BAR_START+3,current_colour_palette_enum,&hsv_health);
+				break;
+			case STARTUP_ANIMATION:
+				
+				// Draw bars
+				fill_bar(HP_BAR_START, HP_BAR_END, startup_hp_value, &hsv_health);
+				if (startup_hp_value > FULL_BAR_LENGTH)
+					fill_bar(HP_BAR_START, HP_BAR_START - 1 + startup_hp_value - FULL_BAR_LENGTH, DEFAULT_SATURATION, &hsv_health_alt);
+				
+				fill_bar(EN_BAR_START, EN_BAR_END, startup_energy_value, &hsv_energy);
+				if (startup_energy_value > FULL_BAR_LENGTH)
+					fill_bar(EN_BAR_START, EN_BAR_START - 1 + startup_energy_value - FULL_BAR_LENGTH, DEFAULT_SATURATION, &hsv_energy_alt);
+				
+				fill_bar(DASH_BAR_START, DASH_BAR_END, startup_dash_value, &hsv_dash);
+				if (startup_dash_value > DASH_BAR_LENGTH)
+					fill_bar(DASH_BAR_START, DASH_BAR_START - 1 + startup_dash_value - DASH_BAR_LENGTH, DEFAULT_SATURATION, &hsv_dash_alt);
+
+				// When all are at max, change state to RUNNING and reset animation
+				if(startup_hp_value == hp_value && startup_energy_value == energy_value && startup_dash_value == dash_value)
+				{
+					state = RUNNING;
+					startup_hp_value = 0;
+					startup_energy_value = 0;
+					startup_dash_value = 0;
+				}
 				break;
 			default:
 				break;
@@ -1441,39 +1492,7 @@ void main()
 			
 			
 			// Display led_data
-			EA = 0; // Disable global interrupts
-			bitbangWs2812(LED_COUNT, led_data);
-			EA = 1;	// Enable global interrupts
-
-			if(errorFlag)	// TESTING when loop error show millis and prev millis counts when error happened
-			{
-				#ifdef USB_ENABLE
-				UsbCdc_puts("prev_millis:");	// TESTING
-				UsbCdc_puti32(prev_millis);
-				UsbCdc_puts(" millis():");
-				UsbCdc_puti32(current_millis);
-				UsbCdc_puts(" diff:");
-				UsbCdc_puti32(current_millis-prev_millis);
-				UsbCdc_puts(" loop:");
-				UsbCdc_puti32(timing_millis);
-				UsbCdc_puts("\r\n");
-				#endif
-
-				// REMOVE after
-				// fill_bar_binary(HP_BAR_END,prev_millis,20,&hsv_dash);	// show 20 bits of prev_millis
-				// fill_bar_binary(EN_BAR_END,current_millis,20,&hsv_dash_alt);
-				
-				
-				hsv.h = RED_HUE; // ERROR red
-				fill_bar_binary(DASH_BAR_END, errorFlag,DASH_BAR_END-DASH_BAR_START+1,&hsv);
-
-				EA = 0; // Disable global interrupts
-				bitbangWs2812(LED_COUNT, led_data);
-				EA = 1;
-				while(1);	// loop forever during error and look at data
-
-			}
+			bitbang(LED_COUNT, led_data);
 		}	// end main logic loop
-		timing_millis = millis() - prev_timing_millis; // TESTING timing
     }	// end while
 }
