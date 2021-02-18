@@ -1,0 +1,28 @@
+Qty;Value;Device;Package;Parts;Description;MANUFACTURER;PARTNO;POPULARITY;PROD_ID;SPICEPREFIX;VALUE;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+1;;PTC0805;WCAP-CSGP_0805_H1.25_R;PTC1;PTC (Resettable Fuse);  Jinrui Electronic Materials Co.;JK-SMD0805-075;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+1;;USB_MICRO-BSINK-PLATE;USB-B-MICRO-SMD-SINK-PLATE;J1;USB Type Micro-B Connector;Jing Extension of the Electronic Co. ;C40957;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+2;100nF;C-EUC0805K;C0805K;C1; C2;CAPACITOR; European symbol;;?;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+6;10k;R-US_R0805S;R0805S;R1; R3; R5; R6; R7; R8;RESISTOR; American symbol;;?;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+4;10uF;C-EUC0805K;C0805K;C3; C4; C5; C9;CAPACITOR; European symbol;;?;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+1;2k;R-US_R0805S;R0805S;R2;RESISTOR; American symbol;;?;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+1;3.9k;R-US_R0805S;R0805S;R4;RESISTOR; American symbol;;?;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+1;4.7uH;INDUCTOR2012;BEADC2012X105N;L1;NRS6014 Inductor;INPAQ;C315723;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+1;7MM-SLIDE-SWITCH;7MM-SLIDE-SWITCH;7MM-SMD-SLIDE-SWITCH;PWR;PN: SSSS811101 7mm SMD SLIDE SWITCH;XKB Enterprise;SK-3296S-01-L1 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+1;AP2302B;MOSFET-NREFLOW;SOT23-R;Q2;N-Channel Mosfet;HX(hengjiaxing);AP2302B;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+1;B5819LW;DIODESOD-123;SOD-123;D1;Diode;Guangdong Hottech ;B5819LW ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+1;CH552SOP16-HANDSOLDER;CH552SOP16-HANDSOLDER;SOP16-HANDSOLDER;IC1;Microcontroller;WCH(Jiangsu Qin Heng);CH552G;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+1;HX2301A;MOSFET-P;SOT23-R;Q1;P-Channel Mosfet;HX(hengjiaxing) ;HX2301A ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+46;KTR-1010RGBC-1812-4;KTR-1010RGBC-1812-4;SK6812-2020;STATUS; U$1; U$2; U$3; U$4; U$5; U$6; U$7; U$8; U$9; U$10; U$11; U$12; U$13; U$14; U$15; U$16; U$17; U$18; U$19; U$20; U$21; U$22; U$23; U$24; U$25; U$26; U$27; U$28; U$29; U$30; U$31; U$32; U$33; U$34; U$35; U$36; U$37; U$38; U$39; U$40; U$41; U$42; U$43; U$44; U$45;Addressable RGD LED similiar to SK6812-2020.;KTRLIGHT;KTR-1010RGBC-1812-4
+1;MCP73832;MCP73831;SOT23-5;U1;Miniature single cell; fully integrated Li-Ion; Li-polymer charge management controller;Microchip Tech;MCP73832;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+1;MT3540;AP3012;SOT23-5;U2;AP3012;XI'AN Aerosemi Tech;MT3540 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+3;SPRING-CONTACT;SPRING-CONTACT;818000905-SPRING-CONTACT;GND; TIN1; TIN2;;ECT;ECT818000905;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+7;TACTSW;TACTSW;3MM-TACT;BOOT; DP+; DP-; EP+; EP-; HP+; HP-;;SHOU HAN;TS3315A;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+4;;;;;M2 Threaded Standoff OD 3.12mm length 4mm;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+4;;;;;M2 Button Philips Head 3 mm length black;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+4;;;;;M2 Button Philips Head 6 mm length black;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+1;;;;;Lipo Battery 630 Mah 403443 (4 mm thick x 34 mm x 43 mm);;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+4;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
